@@ -3,7 +3,7 @@ from tiesports_scraper import fetch_player_points_playwright
 
 def render_ranking():
     st.markdown("## 🏆 Ranking semanal (TieSports/FPP)")
-    st.caption("Pesquisa por nome ou nº de licença e mostra posição/pontos (via clique em 'Ver mais').")
+    st.caption("Pesquisa por nome ou nº de licença (clica automaticamente em 'Ver mais').")
 
     gender = st.selectbox("Bloco", ["Masculinos", "Femininos", "Mistos"], index=0)
     query = st.text_input("Nome ou nº licença", placeholder="Ex: Lucas Francisco ou 17017")
@@ -17,8 +17,10 @@ def render_ranking():
             return
 
         st.success("Encontrado ✅")
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Ranking", str(res.get("ranking", "—")))
-        c2.metric("Licença", res["licenca"])
-        c3.metric("Pontos", res["pontos"])
-        st.write({"Jogador": res["jogador"]})
+        c2.metric("Pontos", res.get("pontos", "—"))
+        c3.metric("Licença", res.get("licenca", "—"))
+        c4.metric("Data", res.get("date", "—"))
+
+        st.write({"Jogador": res.get("jogador", "—")})
