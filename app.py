@@ -703,21 +703,27 @@ def render_view(div_value: str | None):
             """, unsafe_allow_html=True)
     else:
         st.dataframe(
-            out,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
-                "Destaque": st.column_config.TextColumn("Destaque"),
-            }
-        )
+    out,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
+        "Destaque": st.column_config.TextColumn("Destaque"),
+    },
+    key=f"df_{tab_key}"
+)
 
-    st.download_button(
-        "Download CSV (filtrado)",
-        data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
-        file_name=f"calendario_fppadel_{pdf_name.replace('.pdf','')}.csv",
-        mime="text/csv"
-    )
+
+    tab_key = (div_value or "ALL")
+
+st.download_button(
+    "Download CSV (filtrado)",
+    data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
+    file_name=f"calendario_fppadel_{tab_key.lower()}_{pdf_name.replace('.pdf','')}.csv",
+    mime="text/csv",
+    key=f"dl_{tab_key}"
+)
+
 
 with tab_abs:
     render_view("ABS")
