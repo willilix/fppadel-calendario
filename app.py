@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 import datetime as dt
 from io import BytesIO
 from urllib.parse import urljoin, urlparse, quote_plus
@@ -19,16 +20,6 @@ from points_calculator import render_points_calculator
 # -------------------------------------------------
 st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
 
-# ✅ LOGO (centrado e maior) — e sem imagem "vazia" extra
-logo_path = "armadura.png"
-if os.path.exists(logo_path):
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c2:
-        st.image(logo_path, width=220)  # 👈 aumenta/diminui aqui se quiseres
-else:
-    # se o ficheiro não existir no deploy, não mostra nada (evita quadrados brancos)
-    pass
-
 # Apple Sports UI (CSS)
 st.markdown("""
 <style>
@@ -40,6 +31,37 @@ header { visibility: hidden; height: 0px; }
 h1, h2, h3 { letter-spacing: -0.02em; }
 a, a:visited { color: #0A84FF !important; text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+/* Logo bar */
+.logo-wrap{
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  margin-bottom: 10px;
+}
+.logo-wrap img{
+  display:block;
+  height: 84px;            /* 👈 tamanho do logo */
+  width: auto;
+}
+.logo-text{
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: rgba(17,17,17,0.78);
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* Em mobile portrait: força centrar e stack bonito */
+@media (max-width: 520px){
+  .logo-wrap{ gap: 10px; }
+  .logo-wrap img{ height: 78px; }
+  .logo-text{ font-size: 0.92rem; }
+}
 
 /* Top bar */
 .topbar {
@@ -126,6 +148,27 @@ div[data-baseweb="input"] > div { border-radius: 14px !important; }
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
+# LOGO + TEXTO (centrado, funciona bem em mobile portrait)
+# -------------------------------------------------
+logo_path = "armadura.png"
+if os.path.exists(logo_path):
+    with open(logo_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    st.markdown(f"""
+    <div class="logo-wrap">
+      <img src="data:image/png;base64,{b64}" alt="armadura" />
+      <div class="logo-text">App oficial dos 6 zeritas - Powered by Grupo do 60</div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    # Se não existir, mostra apenas o texto (sem quadrados brancos)
+    st.markdown("""
+    <div class="logo-wrap">
+      <div class="logo-text">App oficial dos 6 zeritas - Powered by Grupo do 60</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# -------------------------------------------------
 # CONSTANTS
 # -------------------------------------------------
 HOME_URL = "https://fppadel.pt/"
@@ -210,18 +253,6 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
 
 def normalize_text(s: str) -> str:
     return (s or "").strip()
-
-def class_badge(classe: str) -> str:
-    c = (classe or "").lower()
-    if "gold" in c or "50.000" in c: return "🥇"
-    if "silver" in c: return "🥈"
-    if "bronze" in c: return "🥉"
-    if "continental" in c or "promises" in c: return "🌍"
-    if "a definir" in c: return "❓"
-    if "10.000" in c: return "🔵"
-    if "5.000" in c: return "🟢"
-    if "2.000" in c: return "⚪"
-    return ""
 
 # -------------------------------------------------
 # DISCOVER LATEST PDF
@@ -579,7 +610,6 @@ with tab_cal:
         st.stop()
 
     df["Local"] = df.apply(build_local_dash_org, axis=1)
-    df["Destaque"] = df["Classe"].apply(class_badge)
     df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
     tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
@@ -642,7 +672,6 @@ with tab_cal:
 
         if search.strip():
             q = search.strip().lower()
-            # ✅ removi "Actividade" daqui também
             cols = ["Data (mês + dia)", "DIV", "Categorias", "Classe", "Local", "Mes"]
             mask = False
             for col in cols:
@@ -680,27 +709,20 @@ with tab_cal:
 
         st.markdown("### Actividades")
 
-        # ✅ remove "Actividade" do output
+        # ✅ "Destaque" removido
         out = view[[
             "Data (mês + dia)",
             "DIV",
             "Categorias",
             "Classe",
             "Local",
-            "Destaque",
             "Mapa",
         ]].copy()
 
         if is_mobile:
             for _, row in out.iterrows():
-                # ✅ título do card agora usa Categoria/Classe/Local (já não Actividade)
                 title = row.get("Categorias") or row.get("Classe") or row.get("Local") or "Evento"
-
-                badge_div = row["DIV"]
-                badge_rank = normalize_text(row["Destaque"])
-                pills = f'<span class="pill">{badge_div}</span>'
-                if badge_rank:
-                    pills += f' <span class="pill">{badge_rank}</span>'
+                pills = f'<span class="pill">{row["DIV"]}</span>'
 
                 st.markdown(f"""
                 <div class="card">
@@ -721,7 +743,6 @@ with tab_cal:
                 key=f"df_{tab_key}",
                 column_config={
                     "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
-                    "Destaque": st.column_config.TextColumn("Destaque"),
                 }
             )
 
@@ -743,7 +764,17 @@ with tab_cal:
         render_view(None)
 
 # -------------------------------------------------
-# PONTOS TAB (sub-app)
+# PONTOS TAB
 # -------------------------------------------------
 with tab_pts:
     render_points_calculator()
+
+    # ✅ Nota nova (abaixo). Se quiseres substituir a antiga, vê instruções no fim.
+    st.info(
+        "M1 os primeiros 100 no ranking\n"
+        "M2 do 101 ao 250\n"
+        "M3 do 251 ao 500\n"
+        "M4 do 501 ao 750\n"
+        "M5 do 751 ao 1000\n"
+        "M6 do 1001 até ao último looser"
+    )
