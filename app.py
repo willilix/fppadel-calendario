@@ -38,29 +38,30 @@ a:hover { text-decoration: underline; }
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   flex-wrap: wrap;
   margin-top: 6px;
   margin-bottom: 10px;
 }
 .logo-wrap img{
   display:block;
-  height: 84px;            /* 👈 tamanho do logo */
+  height: 252px;            /* ✅ 3x maior (antes ~84px) */
   width: auto;
 }
 .logo-text{
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   color: rgba(17,17,17,0.78);
   text-align: center;
   line-height: 1.2;
+  max-width: 520px;
 }
 
-/* Em mobile portrait: força centrar e stack bonito */
+/* Em mobile portrait: continua centrado e ligeiramente mais compacto */
 @media (max-width: 520px){
-  .logo-wrap{ gap: 10px; }
-  .logo-wrap img{ height: 78px; }
-  .logo-text{ font-size: 0.92rem; }
+  .logo-wrap{ gap: 12px; }
+  .logo-wrap img{ height: 210px; } /* ainda grande, mas não “rebenta” */
+  .logo-text{ font-size: 1.0rem; }
 }
 
 /* Top bar */
@@ -161,7 +162,6 @@ if os.path.exists(logo_path):
     </div>
     """, unsafe_allow_html=True)
 else:
-    # Se não existir, mostra apenas o texto (sem quadrados brancos)
     st.markdown("""
     <div class="logo-wrap">
       <div class="logo-text">App oficial dos 6 zeritas - Powered by Grupo do 60</div>
@@ -495,7 +495,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     "Mes": month_title,
                     "Dia": day_text,
                     "DIV": div,
-                    "Actividade": actividade,
+                    "Actividade": actividade,  # mantido internamente (não mostramos)
                     "Categorias": categorias,
                     "Classe": classe,
                     "Local_pdf": local_col,
@@ -557,19 +557,10 @@ def compute_metrics(df_view: pd.DataFrame):
     return total, next_date, len(this_month)
 
 # -------------------------------------------------
-# TOP-LEVEL NAV: Calendário vs Pontos + Botão Rankings
+# TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
+# ✅ Rankings fica imediatamente ao lado de Pontos
 # -------------------------------------------------
-col_tabs, col_btn = st.columns([5, 1])
-
-with col_tabs:
-    tab_cal, tab_pts = st.tabs(["📅 Calendário", "🧮 Pontos"])
-
-with col_btn:
-    st.link_button(
-        "🏆 Rankings",
-        "https://tour.tiesports.com/fpp/weekly_rankings",
-        use_container_width=True
-    )
+tab_cal, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🧮 Pontos", "🏆 Rankings"])
 
 # -------------------------------------------------
 # CALENDÁRIO TAB
@@ -709,7 +700,7 @@ with tab_cal:
 
         st.markdown("### Actividades")
 
-        # ✅ "Destaque" removido
+        # (sem Actividade / sem Destaque)
         out = view[[
             "Data (mês + dia)",
             "DIV",
@@ -756,10 +747,8 @@ with tab_cal:
 
     with tab_abs:
         render_view("ABS")
-
     with tab_jov:
         render_view("JOV")
-
     with tab_all:
         render_view(None)
 
@@ -769,12 +758,10 @@ with tab_cal:
 with tab_pts:
     render_points_calculator()
 
-    # ✅ Nota nova (abaixo). Se quiseres substituir a antiga, vê instruções no fim.
-    st.info(
-        "M1 os primeiros 100 no ranking\n"
-        "M2 do 101 ao 250\n"
-        "M3 do 251 ao 500\n"
-        "M4 do 501 ao 750\n"
-        "M5 do 751 ao 1000\n"
-        "M6 do 1001 até ao último looser"
-    )
+# -------------------------------------------------
+# RANKINGS TAB (link)
+# -------------------------------------------------
+with tab_rank:
+    st.subheader("Rankings (TieSports)")
+    st.caption("Abre o ranking no site oficial.")
+    st.link_button("🏆 Abrir Rankings", "https://tour.tiesports.com/fpp/weekly_rankings", use_container_width=True)
