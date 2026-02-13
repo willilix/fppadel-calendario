@@ -112,6 +112,44 @@ div[data-baseweb="input"] > div { border-radius: 14px !important; }
   background: rgba(10,132,255,0.12);
   border-color: rgba(10,132,255,0.35);
 }
+
+/* Premium hero header (logo + glass) */
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(17,17,17,0.08);
+  background: radial-gradient(1200px 600px at 20% 10%, rgba(10,132,255,0.18), transparent 60%),
+              radial-gradient(900px 500px at 80% 20%, rgba(90,200,250,0.16), transparent 55%),
+              rgba(255,255,255,0.74);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 18px 55px rgba(17,17,17,0.10);
+  padding: 16px 16px;
+  margin-bottom: 12px;
+}
+.hero-title { font-weight: 820; font-size: 1.45rem; margin: 0; }
+.hero-sub { color: rgba(17,17,17,0.62); font-size: 0.95rem; margin-top: 4px; }
+.hero-pills { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
+
+/* Logo container */
+.brandmark {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.66);
+  border: 1px solid rgba(17,17,17,0.10);
+  box-shadow: 0 16px 45px rgba(17,17,17,0.12);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+@media (max-width: 768px){
+  .brandmark { width: 72px; height: 72px; border-radius: 18px; }
+  .hero-title { font-size: 1.25rem; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -554,16 +592,30 @@ with tab_cal:
     st.session_state["last_pdf_name"] = pdf_name
     new_badge = " • 🟢 nova versão" if (prev and prev != pdf_name) else ""
 
-    st.markdown(f"""
-    <div class="topbar">
-      <div class="top-title">Calendário FPPadel</div>
-      <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
-      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-        <span class="pill">PDF: {pdf_name}</span>
-        <span class="pill">Ano: {year}</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- Premium header (hero) ---
+    logo_path = "armadura.png"
+    c_logo, c_head = st.columns([1, 7], vertical_alignment="center")
+
+    with c_logo:
+        st.markdown('<div class="brandmark">', unsafe_allow_html=True)
+        try:
+            st.image(logo_path, width=76)
+        except Exception:
+            pass
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with c_head:
+        st.markdown(f"""
+        <div class="hero">
+          <div class="hero-title">Calendário FPPadel</div>
+          <div class="hero-sub">ABS e JOV \u2022 actualizado automaticamente \u2022 Maps{new_badge}</div>
+          <div class="hero-pills">
+            <span class="pill">PDF: {pdf_name}</span>
+            <span class="pill">Ano: {year}</span>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
     st.link_button("Abrir PDF original", pdf_url)
 
