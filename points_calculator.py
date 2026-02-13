@@ -30,6 +30,11 @@ LEVEL_MULTIPLIER = {
 }
 
 
+def _fmt_pt(x: float) -> str:
+    """Formato PT: separador decimal vírgula e milhares com ponto."""
+    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def calcular_pontos(nivel: int, classe: int, posicao: str) -> float:
     base = BASE_POINTS_50K_QUADRO_A[posicao]
     m_classe = CLASS_MULTIPLIER[classe]
@@ -59,15 +64,23 @@ def render_points_calculator():
     m_nivel = LEVEL_MULTIPLIER[nivel]
 
     st.markdown("---")
-    st.metric("Pontos ganhos", f"{pontos:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    st.metric("Pontos ganhos", _fmt_pt(pontos))
 
     with st.expander("Ver detalhe do cálculo", expanded=False):
         st.write(f"**Base (50.000 / Quadro A)** para *{posicao}*: `{base}`")
         st.write(f"**Multiplicador da classe {classe}**: `{m_classe}`")
         st.write(f"**Multiplicador do nível {nivel}**: `{m_nivel}`")
-        st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {pontos}`")
+        st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
-    st.info("Nota: esta calculadora usa apenas 'Quadro Direto' (posição) + 'Quadro A' (pontos base 50.000), como pediste.")
+    # ✅ Nota nova (substitui a antiga)
+    st.info(
+        "M1 os primeiros 100 no ranking\n"
+        "M2 do 101 ao 250\n"
+        "M3 do 251 ao 500\n"
+        "M4 do 501 ao 750\n"
+        "M5 do 751 ao 1000\n"
+        "M6 do 1001 até ao último looser"
+    )
 
 
 # Se quiseres testar este ficheiro isoladamente:
