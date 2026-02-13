@@ -2,7 +2,6 @@ streamlit
 pandas
 requests
 beautifulsoup4
+unidecode
 pdfplumber
 pdfminer.six
-playwright==1.58.0
-unidecode
