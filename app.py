@@ -10,6 +10,8 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
+from ranking_subapp import render_ranking
+
 
 # 👇 NEW: points calculator sub-app
 from points_calculator import render_points_calculator
@@ -518,7 +520,7 @@ def compute_metrics(df_view: pd.DataFrame):
 # -------------------------------------------------
 # TOP-LEVEL NAV: Calendário vs Pontos
 # -------------------------------------------------
-tab_cal, tab_pts = st.tabs(["📅 Calendário", "🧮 Pontos"])
+tab_cal, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🧮 Pontos", "🏆 Ranking"])
 
 # -------------------------------------------------
 # CALENDÁRIO TAB (tua app original)
@@ -732,3 +734,6 @@ with tab_cal:
 # -------------------------------------------------
 with tab_pts:
     render_points_calculator()
+with tab_rank:
+    render_ranking()
+
