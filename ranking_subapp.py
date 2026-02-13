@@ -5,44 +5,20 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://tour.tiesports.com/fpp/weekly_rankings?rank=absolutos"
 
-HEADERS_ASYNC = {
-    "accept": "*/*",
-    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-    "origin": "https://tour.tiesports.com",
-    "referer": BASE_URL,
-    "x-microsoftajax": "Delta=true",
-    "x-requested-with": "XMLHttpRequest",
+PAGER_EVENTTARGET = "DataPager_ranking_players$ctl00$ctl04"
+
+HEADERS = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36",
+    "referer": BASE_URL,
+    "origin": "https://tour.tiesports.com",
 }
-
-UPDATE_PANEL_ID = "UpdatePanel5"
-
-
-def _extract_updatepanel_html(delta_text: str, panel_id: str = UPDATE_PANEL_ID) -> str:
-    if "|updatePanel|" not in delta_text:
-        return delta_text
-    parts = delta_text.split("|")
-    for i in range(len(parts) - 2):
-        if parts[i] == "updatePanel" and parts[i + 1] == panel_id:
-            return parts[i + 2] or ""
-    return ""
-
-
-def _get_hidden_fields(html: str) -> dict:
-    soup = BeautifulSoup(html, "html.parser")
-    data = {}
-    for inp in soup.select("input[type='hidden']"):
-        name = inp.get("name")
-        if name:
-            data[name] = inp.get("value", "")
-    return data
-
 
 def _extract_rows(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     rows = []
     for tr in soup.select("table tbody tr"):
         tds = [td.get_text(strip=True) for td in tr.select("td")]
+        # Esperado: Ranking | Licença | Jogador | Pontos | Escalão | ...
         if len(tds) >= 4 and tds[0].isdigit():
             rows.append(
                 {
@@ -55,108 +31,114 @@ def _extract_rows(html: str) -> list[dict]:
             )
     return rows
 
-
-def _find_pager_link_eventtargets(html: str) -> dict[int, str]:
+def _collect_form_fields(soup: BeautifulSoup) -> dict:
     """
-    Encontra os links do pager e mapeia página -> __EVENTTARGET.
-    Em WebForms geralmente vem no href: javascript:__doPostBack('EVENTTARGET','')
+    Recolhe TODOS os campos do <form> como o browser faria:
+    - inputs (inclui hidden)
+    - selects (opção seleccionada)
+    - textareas
     """
-    soup = BeautifulSoup(html, "html.parser")
-    mapping = {}
+    form = soup.find("form")
+    if not form:
+        return {}
 
-    # procurar qualquer <a href="javascript:__doPostBack('X','')">n</a>
-    for a in soup.select("a[href*='__doPostBack']"):
-        txt = a.get_text(strip=True)
-        if not txt.isdigit():
+    data = {}
+
+    # inputs
+    for inp in form.select("input"):
+        name = inp.get("name")
+        if not name:
             continue
-        page_num = int(txt)
+        itype = (inp.get("type") or "").lower()
 
-        href = a.get("href", "")
-        m = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", href)
-        if m:
-            eventtarget = m.group(1)
-            mapping[page_num] = eventtarget
+        if itype in ("submit", "button", "image"):
+            continue
 
-    return mapping
+        if itype in ("checkbox", "radio"):
+            if inp.has_attr("checked"):
+                data[name] = inp.get("value", "on")
+            continue
 
+        data[name] = inp.get("value", "")
 
-def _postback(session: requests.Session, html: str, eventtarget: str, eventargument: str = "") -> str:
+    # selects
+    for sel in form.select("select"):
+        name = sel.get("name")
+        if not name:
+            continue
+        opt = sel.find("option", selected=True)
+        if not opt:
+            opt = sel.find("option")
+        data[name] = opt.get("value", "") if opt else ""
+
+    # textareas
+    for ta in form.select("textarea"):
+        name = ta.get("name")
+        if not name:
+            continue
+        data[name] = ta.text or ""
+
+    return data
+
+def _looks_like_page(html: str, page: int) -> bool:
     """
-    Faz um postback AJAX para o UpdatePanel.
-    Retorna o HTML do UpdatePanel.
+    Heurística para validar se estamos na página certa:
+    - o pager costuma ter a página actual com uma classe/estilo diferente
+    - e/ou existe um botão/elemento com o número da página em destaque
     """
-    hidden = _get_hidden_fields(html)
-
-    payload = dict(hidden)
-    payload["__EVENTTARGET"] = eventtarget
-    payload["__EVENTARGUMENT"] = eventargument
-    payload["__ASYNCPOST"] = "true"
-
-    # ScriptManager1 costuma existir e é usado nos async postbacks
-    # Se existir, usamos o mesmo UpdatePanel5|<eventtarget>
-    payload["ScriptManager1"] = f"{UPDATE_PANEL_ID}|{eventtarget}"
-
-    r = session.post(BASE_URL, headers=HEADERS_ASYNC, data=payload, timeout=25)
-    r.raise_for_status()
-
-    panel_html = _extract_updatepanel_html(r.text, panel_id=UPDATE_PANEL_ID)
-    # o panel_html é um fragmento; guardamos o HTML inteiro para próximos hidden fields:
-    # mas os hidden fields actualizados vêm no delta também.
-    # Para simplificar: devolvemos o texto inteiro (delta) para manter hidden fields acessíveis.
-    return r.text
-
+    # muito simples e permissivo:
+    return bool(re.search(rf">\s*{page}\s*<", html))
 
 @st.cache_data(ttl=300)
-def fetch_license_at_page(license_no: str, target_page: int = 64) -> dict | None:
-    """
-    Vai até à página target_page usando o pager __doPostBack e procura a licença nessa página.
-    """
+def fetch_player_by_license(license_no: str, page: int = 64) -> dict | None:
     s = requests.Session()
 
-    # 1) GET inicial
-    r0 = s.get(BASE_URL, timeout=25)
-    r0.raise_for_status()
-    html_full = r0.text
+    # 1) GET inicial (para VIEWSTATE, EVENTVALIDATION, etc.)
+    r = s.get(BASE_URL, headers=HEADERS, timeout=25)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    # tenta logo na página 1
-    for row in _extract_rows(html_full):
+    base_payload = _collect_form_fields(soup)
+
+    # 2) se já estiver na página 1 e por acaso contém a licença
+    for row in _extract_rows(r.text):
         if row["licenca"] == str(license_no):
             row["page"] = 1
             return row
 
-    # 2) descobrir eventtargets do pager na página actual
-    pager_map = _find_pager_link_eventtargets(html_full)
+    # 3) tentar saltar para a página desejada com diferentes __EVENTARGUMENT
+    # (porque não temos o valor exacto do argumento capturado)
+    candidates = [
+        str(page),
+        str(page - 1),                # 0-based comum
+        f"Page${page}",
+        f"Page${page-1}",
+        f"{page}$",                   # alguns DataPagers usam sufixos
+        f"{page-1}$",
+        "",                           # alguns casos (raro)
+    ]
 
-    # Se a página target não estiver visível no pager actual (normal), temos de ir avançando.
-    # Estratégia:
-    # - enquanto target não estiver disponível, clicamos no "..." (se existir) ou no maior número disponível
-    # - depois clicamos no target
-    current_html_full = html_full
+    for arg in candidates:
+        payload = dict(base_payload)
+        payload["__EVENTTARGET"] = PAGER_EVENTTARGET
+        payload["__EVENTARGUMENT"] = arg
 
-    for _ in range(120):  # limite de segurança
-        pager_map = _find_pager_link_eventtargets(current_html_full)
+        r2 = s.post(BASE_URL, headers=HEADERS, data=payload, timeout=25)
+        r2.raise_for_status()
 
-        if target_page in pager_map:
-            # clicar directamente na página target
-            delta = _postback(s, current_html_full, pager_map[target_page], "")
-            # após postback, o delta contém novos hiddenfields; mas o UpdatePanel tem a tabela
-            panel_html = _extract_updatepanel_html(delta, UPDATE_PANEL_ID)
-            for row in _extract_rows(panel_html):
+        html2 = r2.text
+
+        # validar rapidamente que mudámos de página (best effort)
+        # mesmo que a heurística falhe, ainda tentamos extrair
+        rows = _extract_rows(html2)
+        if rows:
+            for row in rows:
                 if row["licenca"] == str(license_no):
-                    row["page"] = target_page
+                    row["page"] = page
+                    row["eventargument_used"] = arg
                     return row
-            return None
 
-        # não aparece: precisamos “saltar” para a frente
-        # escolhe a maior página que aparece no pager e clica nela (empurra a janela)
-        if pager_map:
-            max_visible = max(pager_map.keys())
-            delta = _postback(s, current_html_full, pager_map[max_visible], "")
-            current_html_full = delta  # delta para continuar a ter hidden fields
-            continue
-
-        # se não encontrou pager_map, aborta
-        return None
+        # Se não encontrou, continuar a tentar próximos argumentos
 
     return None
 
@@ -169,15 +151,15 @@ def render_ranking():
     with col1:
         lic = st.text_input("Nº licença", value="17017", placeholder="ex: 17017")
     with col2:
-        page = st.number_input("Página (do site)", min_value=1, max_value=200, value=64, step=1)
+        page = st.number_input("Página (do site)", min_value=1, max_value=500, value=64, step=1)
 
     if st.button("🔎 Procurar", use_container_width=True, disabled=not lic.strip()):
-        with st.spinner(f"A consultar ranking (a saltar para a página {page})…"):
-            res = fetch_license_at_page(lic.strip(), int(page))
+        with st.spinner(f"A consultar ranking (página {int(page)})…"):
+            res = fetch_player_by_license(lic.strip(), page=int(page))
 
         if not res:
-            st.warning("Não encontrei nessa página (ou o pager mudou).")
-            st.info("Se me deres o 'Copy as cURL' do clique na página 2 do pager, eu deixo isto 100% exacto.")
+            st.warning("Não encontrei essa licença nessa página (ou o site mudou o padrão do pager).")
+            st.info("Se quiseres, eu faço o ajuste final se me deres o valor do __EVENTARGUMENT quando clicas na página 64.")
             return
 
         st.success("Encontrado ✅")
@@ -187,4 +169,7 @@ def render_ranking():
         c.metric("Licença", res["licenca"])
         d.metric("Pontos", res["pontos"])
         st.write({"Jogador": res["jogador"], "Escalão": res.get("escalao", "")})
+
+        # opcional: debug
+        st.caption(f"EVENTARGUMENT usado: {res.get('eventargument_used', '')}")
         st.link_button("Abrir no site", BASE_URL)
