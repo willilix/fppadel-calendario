@@ -16,58 +16,80 @@ from bs4 import BeautifulSoup
 # -------------------------------------------------
 st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
 
-# CSS (só visual; não mexe na lógica)
+# Apple Sports UI (CSS)
 st.markdown("""
 <style>
-/* Layout geral */
-.block-container { padding-top: 1.25rem; padding-bottom: 3rem; max-width: 1100px; }
+/* Container */
+.block-container { padding-top: 1.1rem; padding-bottom: 3rem; max-width: 1120px; }
 header { visibility: hidden; height: 0px; }
 
-/* Tipografia */
+/* Typography */
 h1, h2, h3 { letter-spacing: -0.02em; }
-h1 { font-size: 2rem; margin-bottom: 0.25rem; }
-.sub { color: rgba(17,17,17,0.65); margin-bottom: 1.1rem; font-size: 0.98rem; }
+a, a:visited { color: #0A84FF !important; text-decoration: none; }
+a:hover { text-decoration: underline; }
 
-/* Cards Apple-like */
-.card {
-  padding: 16px 16px;
+/* Top bar */
+.topbar {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(17,17,17,0.08);
   border-radius: 18px;
-  background: #FFFFFF;
-  border: 1px solid rgba(17,17,17,0.06);
-  box-shadow: 0 10px 30px rgba(17,17,17,0.06);
+  padding: 14px 16px;
   margin-bottom: 12px;
+  box-shadow: 0 10px 30px rgba(17,17,17,0.06);
 }
-.small { color: rgba(17,17,17,0.70); font-size: 0.95rem; line-height: 1.35; }
+.top-title { font-weight: 750; font-size: 1.35rem; margin: 0; }
+.top-sub { color: rgba(17,17,17,0.62); font-size: 0.95rem; margin-top: 4px; }
 
-/* Badges tipo "pill" */
-.badge {
-  display:inline-flex;
-  align-items:center;
-  padding: 4px 10px;
+/* Pills */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
   border-radius: 999px;
   border: 1px solid rgba(17,17,17,0.10);
   background: rgba(17,17,17,0.03);
   font-size: 0.78rem;
-  margin-left: 6px;
+  color: rgba(17,17,17,0.80);
 }
 
-/* Links estilo iOS */
-a, a:visited { color: #0A84FF !important; text-decoration: none; }
-a:hover { text-decoration: underline; }
+/* Metric cards */
+.metric {
+  border-radius: 18px;
+  background: #FFFFFF;
+  border: 1px solid rgba(17,17,17,0.06);
+  box-shadow: 0 10px 30px rgba(17,17,17,0.05);
+  padding: 14px 14px;
+}
+.metric .label { color: rgba(17,17,17,0.62); font-size: 0.82rem; }
+.metric .value { font-weight: 760; font-size: 1.15rem; margin-top: 4px; }
+.metric .hint { color: rgba(17,17,17,0.55); font-size: 0.80rem; margin-top: 3px; }
 
-/* Inputs com look mais clean */
+/* Wallet-like cards (mobile) */
+.card {
+  border-radius: 22px;
+  background: #FFFFFF;
+  border: 1px solid rgba(17,17,17,0.06);
+  box-shadow: 0 12px 38px rgba(17,17,17,0.07);
+  padding: 16px 16px;
+  margin-bottom: 12px;
+}
+.card .title { font-weight: 760; font-size: 1.03rem; }
+.card .row { margin-top: 8px; color: rgba(17,17,17,0.72); font-size: 0.93rem; line-height: 1.32; }
+.card .actions { margin-top: 12px; }
+
+/* Inputs / buttons */
 div[data-baseweb="select"] > div,
-div[data-baseweb="input"] > div {
-  border-radius: 14px !important;
-}
+div[data-baseweb="input"] > div { border-radius: 14px !important; }
 
-/* Botões arredondados */
-button[kind="primary"], button[kind="secondary"], .stButton button {
+.stButton button {
   border-radius: 14px !important;
   padding: 0.55rem 0.9rem !important;
 }
 
-/* Dataframe mais clean (desktop) */
+/* Dataframe (desktop) */
 [data-testid="stDataFrame"] {
   border-radius: 18px;
   overflow: hidden;
@@ -75,14 +97,25 @@ button[kind="primary"], button[kind="secondary"], .stButton button {
   box-shadow: 0 10px 30px rgba(17,17,17,0.04);
 }
 
-/* Dividers suaves */
-hr { border-top: 1px solid rgba(17,17,17,0.08); }
+/* Tabs spacing */
+.stTabs [data-baseweb="tab-list"] {
+  gap: 8px;
+}
+.stTabs [data-baseweb="tab"] {
+  border-radius: 999px;
+  border: 1px solid rgba(17,17,17,0.10);
+  background: rgba(17,17,17,0.03);
+  padding: 8px 14px;
+}
+.stTabs [aria-selected="true"] {
+  background: rgba(10,132,255,0.12);
+  border-color: rgba(10,132,255,0.35);
+}
 </style>
 """, unsafe_allow_html=True)
 
-
 # -------------------------------------------------
-# CONSTANTES
+# CONSTANTS
 # -------------------------------------------------
 HOME_URL = "https://fppadel.pt/"
 WP_MEDIA_SEARCH = "https://fppadel.pt/wp-json/wp/v2/media"
@@ -114,10 +147,16 @@ components.html("""
 is_mobile = bool(st.session_state.get("is_mobile", False))
 
 # -------------------------------------------------
-# UTILIDADES
+# HELPERS
 # -------------------------------------------------
+def month_sort_key(m: str) -> int:
+    try:
+        return MONTHS.index(m.upper())
+    except ValueError:
+        return 999
+
 def _pick_highest_version(urls: list[str]) -> str:
-    """Escolhe o URL com maior sufixo '-<n>.pdf'. Se não houver, usa ordem alfabética."""
+    """Pick the highest '-<n>.pdf' suffix if present; otherwise fallback to alpha."""
     def score(u: str) -> int:
         m = re.search(r"-(\d+)\.pdf$", u)
         return int(m.group(1)) if m else -1
@@ -126,14 +165,12 @@ def _pick_highest_version(urls: list[str]) -> str:
     return urls[0]
 
 def infer_year_from_pdf_url(pdf_url: str) -> int:
-    """Inferir ano do /uploads/YYYY/ se existir."""
     m = re.search(r"/uploads/(\d{4})/", pdf_url)
     if m:
         return int(m.group(1))
     return dt.date.today().year
 
 def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
-    """Converte '4 a 8' / '6-8' / '27' / '27 a 1' em (inicio,fim)."""
     nums = re.findall(r"\d{1,2}", day_text or "")
     if not nums:
         return None, None
@@ -147,7 +184,7 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
 
     end_month = month_num
     end_year = year
-    if end_day < start_day:  # cruza mês
+    if end_day < start_day:  # crosses month
         if month_num == 12:
             end_month = 1
             end_year = year + 1
@@ -171,18 +208,17 @@ def class_badge(classe: str) -> str:
     if "bronze" in c: return "🥉"
     if "continental" in c or "promises" in c: return "🌍"
     if "a definir" in c: return "❓"
-    # valores típicos
     if "10.000" in c: return "🔵"
     if "5.000" in c: return "🟢"
     if "2.000" in c: return "⚪"
     return ""
 
 # -------------------------------------------------
-# DESCOBRIR PDF MAIS RECENTE (robusto)
+# DISCOVER LATEST PDF
 # -------------------------------------------------
 @st.cache_data(ttl=900)
 def find_latest_calendar_pdf_url() -> str:
-    # 1) tentar na home
+    # 1) Home scrape (prefer “saber mais”)
     try:
         html = requests.get(HOME_URL, timeout=20).text
         soup = BeautifulSoup(html, "html.parser")
@@ -191,12 +227,10 @@ def find_latest_calendar_pdf_url() -> str:
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
             text = (a.get_text() or "").strip().lower()
-
-            # preferir botão "saber mais" do calendário
             if "saber mais" in text and href.lower().endswith(".pdf") and "calend" in href.lower():
                 candidates.append(urljoin(HOME_URL, href))
 
-        # fallback: qualquer pdf com "calend"
+        # fallback: any calendar pdf
         if not candidates:
             for a in soup.find_all("a", href=True):
                 href = a["href"].strip()
@@ -208,7 +242,7 @@ def find_latest_calendar_pdf_url() -> str:
     except Exception:
         pass
 
-    # 2) WP media search fallback
+    # 2) WordPress media search fallback
     found = []
     for term in ["CALENDARIO-ACTIVIDADES-PROVISORIO", "RG-01-CALENDARIO-ACTIVIDADES", "CALENDARIO-ACTIVIDADES"]:
         try:
@@ -234,7 +268,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
     return r.content
 
 # -------------------------------------------------
-# PARSER ROBUSTO: LOCAL/ORGANIZAÇÃO POR COORDENADAS
+# PARSER (robusto: LOCAL/ORGANIZAÇÃO por coordenadas)
 # -------------------------------------------------
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     def looks_like_money(tok: str) -> bool:
@@ -270,7 +304,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 
             line_rows = group_words_into_rows(words, y_tol=3)
 
-            # descobrir x das colunas LOCAL e ORGANIZAÇÃO a partir do cabeçalho da página
+            # detect column x for LOCAL and ORGANIZAÇÃO from header on this page
             x_local = None
             x_org = None
             for lr in line_rows:
@@ -295,7 +329,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if up.startswith("CALEND"):
                     continue
 
-                # detectar mês
+                # month detection
                 month_found = None
                 for m in MONTHS:
                     if up == m:
@@ -314,7 +348,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 
                 tokens = line_text.split()
 
-                # achar DIV (ABS/JOV)
+                # DIV
                 div_idx = None
                 for i, t in enumerate(tokens):
                     if t in ("ABS", "JOV"):
@@ -324,7 +358,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     continue
                 div = tokens[div_idx]
 
-                # data (texto antes do tipo)
+                # day text (before tipo)
                 pre = tokens[:div_idx]
                 tipo_set = {"CIR", "FPP", "FOR", "INT"}
                 if len(pre) >= 2 and pre[-2] in tipo_set:
@@ -338,14 +372,13 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if not rest:
                     continue
 
-                # índice do € (prize money) para ajudar a delimitar
                 euro_idx = None
                 for i, t in enumerate(rest):
                     if "€" in t:
                         euro_idx = i
                         break
 
-                # classe
+                # class
                 class_end = euro_idx if euro_idx is not None else len(rest)
                 classe = ""
                 class_start = None
@@ -372,7 +405,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if class_start is None:
                     class_start = class_end
 
-                # categorias
+                # categories
                 cat_start = None
                 for i, t in enumerate(rest):
                     if i >= class_start:
@@ -397,7 +430,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 actividade = " ".join(actividade_tokens).strip()
                 categorias = " ".join(categorias_tokens).strip()
 
-                # LOCAL e ORGANIZAÇÃO por coordenadas
+                # LOCAL & ORGANIZAÇÃO from x columns
                 local_col = ""
                 org_col = ""
                 if x_local is not None and x_org is not None:
@@ -418,14 +451,13 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     if org_col.upper().startswith("ORGAN"):
                         org_col = ""
                 else:
-                    # fallback (raríssimo)
+                    # fallback (rare)
                     if euro_idx is not None and euro_idx + 1 < len(rest):
                         local_col = rest[euro_idx + 1]
                         org_col = " ".join(rest[euro_idx + 2:]).strip() if euro_idx + 2 < len(rest) else ""
 
                 month_title = current_month.title()
                 month_num = MONTH_TO_NUM.get(month_title)
-
                 start_date, end_date = (None, None)
                 if month_num:
                     start_date, end_date = parse_day_range_to_dates(day_text, month_num, year)
@@ -451,57 +483,14 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     df = df[df["DIV"].isin(["ABS", "JOV"])].copy()
     df.drop_duplicates(inplace=True)
 
-    # ordenar por data real
     df["SortDate"] = df["Data_Inicio"].fillna(pd.Timestamp.max.date())
     df.sort_values(["SortDate", "DIV", "Actividade"], inplace=True)
     df.drop(columns=["SortDate"], inplace=True)
-
     return df
 
 # -------------------------------------------------
-# UI
+# BUILD DISPLAY FIELDS
 # -------------------------------------------------
-st.markdown("## Calendário FPPadel")
-st.markdown('<div class="sub">Eventos ABS e JOV • actualização automática • links para Maps</div>', unsafe_allow_html=True)
-
-
-# botão update
-topl, topr = st.columns([1, 1])
-with topr:
-    if st.button("🔄 Forçar actualizar agora"):
-        st.cache_data.clear()
-        st.rerun()
-
-with st.spinner("A carregar o calendário mais recente…"):
-    pdf_url = find_latest_calendar_pdf_url()
-    pdf_name = os.path.basename(urlparse(pdf_url).path)
-    year = infer_year_from_pdf_url(pdf_url)
-    pdf_bytes = download_pdf_bytes(pdf_url)
-    df = parse_calendar_pdf(pdf_bytes, year=year)
-
-# aviso nova versão
-prev = st.session_state.get("last_pdf_name")
-st.session_state["last_pdf_name"] = pdf_name
-if prev and prev != pdf_name:
-    st.success(f"🟢 Nova versão detectada! Antes: {prev} | Agora: {pdf_name}")
-
-st.caption(f"Versão do PDF: **{pdf_name}**")
-st.link_button("Abrir PDF original", pdf_url)
-
-if df.empty:
-    st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
-    st.stop()
-
-# ----------------------------
-# Filtros
-# ----------------------------
-def month_sort_key(m: str) -> int:
-    try:
-        return MONTHS.index(m.upper())
-    except ValueError:
-        return 999
-
-# preparar colunas finais
 def build_local_dash_org(row):
     loc = normalize_text(row.get("Local_pdf"))
     org = normalize_text(row.get("Organizacao_pdf"))
@@ -513,121 +502,228 @@ def build_local_dash_org(row):
         return org
     return ""
 
+def compute_metrics(df_view: pd.DataFrame):
+    total = len(df_view)
+
+    today = dt.date.today()
+    next_date = None
+    if "Data_Inicio" in df_view.columns and not df_view.empty:
+        future = df_view[df_view["Data_Inicio"].notna() & (df_view["Data_Inicio"] >= today)].copy()
+        if not future.empty:
+            future = future.sort_values(["Data_Inicio", "DIV", "Actividade"])
+            next_date = future.iloc[0]["Data_Inicio"]
+
+    # this month count (by overlap)
+    start_month = dt.date(today.year, today.month, 1)
+    if today.month == 12:
+        end_month = dt.date(today.year, 12, 31)
+    else:
+        end_month = dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)
+
+    this_month = df_view[
+        (df_view["Data_Inicio"].notna()) &
+        (df_view["Data_Fim"].notna()) &
+        (df_view["Data_Inicio"] <= end_month) &
+        (df_view["Data_Fim"] >= start_month)
+    ]
+    return total, next_date, len(this_month)
+
+# -------------------------------------------------
+# UI TOP BAR
+# -------------------------------------------------
+left, right = st.columns([1, 1])
+with right:
+    if st.button("⟲ Actualizar", help="Ignora cache e volta a detectar o PDF mais recente"):
+        st.cache_data.clear()
+        st.rerun()
+
+with st.spinner("A detectar o PDF mais recente e a extrair dados…"):
+    pdf_url = find_latest_calendar_pdf_url()
+    pdf_name = os.path.basename(urlparse(pdf_url).path)
+    year = infer_year_from_pdf_url(pdf_url)
+    pdf_bytes = download_pdf_bytes(pdf_url)
+    df = parse_calendar_pdf(pdf_bytes, year=year)
+
+prev = st.session_state.get("last_pdf_name")
+st.session_state["last_pdf_name"] = pdf_name
+new_badge = " • 🟢 nova versão" if (prev and prev != pdf_name) else ""
+
+st.markdown(f"""
+<div class="topbar">
+  <div class="top-title">Calendário FPPadel</div>
+  <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
+  <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+    <span class="pill">PDF: {pdf_name}</span>
+    <span class="pill">Ano: {year}</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.link_button("Abrir PDF original", pdf_url)
+
+if df.empty:
+    st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
+    st.stop()
+
+# Display fields
 df["Local"] = df.apply(build_local_dash_org, axis=1)
 df["Destaque"] = df["Classe"].apply(class_badge)
 df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
-# UI filtros (mobile expander)
-if is_mobile:
-    with st.expander("🔎 Filtros", expanded=False):
-        mes_opts = sorted(df["Mes"].unique(), key=month_sort_key)
-        mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts)
-        div_sel = st.selectbox("DIV", ["(Todos)", "ABS", "JOV"])
-        classes = sorted([c for c in df["Classe"].unique() if isinstance(c, str) and c.strip()])
-        classe_sel = st.multiselect("Classe", classes, default=[])
-        quick = st.selectbox("Filtro rápido (datas)", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"])
-        search = st.text_input("Pesquisa")
-else:
-    st.subheader("Filtros")
-    c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-    with c1:
-        mes_opts = sorted(df["Mes"].unique(), key=month_sort_key)
-        mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts)
-    with c2:
-        div_sel = st.selectbox("DIV", ["(Todos)", "ABS", "JOV"])
-    with c3:
-        classes = sorted([c for c in df["Classe"].unique() if isinstance(c, str) and c.strip()])
-        classe_sel = st.multiselect("Classe", classes, default=[])
-    with c4:
-        quick = st.selectbox("Filtro rápido (datas)", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"])
-    search = st.text_input("Pesquisa (ex: Lisboa, FIP, S14, Madeira, nome do clube...)")
+# -------------------------------------------------
+# TABS (ABS / JOV / Ambos)
+# -------------------------------------------------
+tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
 
-filtered = df.copy()
+def render_view(div_value: str | None):
+    base = df.copy()
+    if div_value in ("ABS", "JOV"):
+        base = base[base["DIV"] == div_value].copy()
 
-if mes_sel != "(Todos)":
-    filtered = filtered[filtered["Mes"] == mes_sel]
-if div_sel != "(Todos)":
-    filtered = filtered[filtered["DIV"] == div_sel]
-if classe_sel:
-    filtered = filtered[filtered["Classe"].isin(classe_sel)]
-
-# filtro rápido por datas
-today = dt.date.today()
-if quick != "(Nenhum)":
-    if quick == "Este mês":
-        start = dt.date(today.year, today.month, 1)
-        end = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
-    elif quick == "Próximos 7 dias":
-        start = today
-        end = today + dt.timedelta(days=7)
+    # Filters (mobile: expander; desktop: row)
+    if is_mobile:
+        with st.expander("Filtros", expanded=False):
+            mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{div_value}")
+            classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{div_value}")
+            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{div_value}")
+            search = st.text_input("Pesquisa", key=f"search_{div_value}")
     else:
-        start = today
-        end = today + dt.timedelta(days=30)
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+        with c1:
+            mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{div_value}")
+        with c2:
+            classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{div_value}")
+        with c3:
+            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{div_value}")
+        with c4:
+            search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{div_value}")
 
-    filtered = filtered[
-        (filtered["Data_Inicio"].notna()) &
-        (filtered["Data_Fim"].notna()) &
-        (filtered["Data_Inicio"] <= end) &
-        (filtered["Data_Fim"] >= start)
-    ]
+    view = base.copy()
 
-# pesquisa livre
-if search.strip():
-    q = search.strip().lower()
-    cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local", "Mes"]
-    mask = False
-    for col in cols:
-        mask = mask | filtered[col].astype(str).str.lower().str.contains(q, na=False)
-    filtered = filtered[mask]
+    # Apply filters
+    if mes_sel != "(Todos)":
+        view = view[view["Mes"] == mes_sel]
 
-# colunas de output
-out = filtered[[
-    "Data (mês + dia)",
-    "DIV",
-    "Actividade",
-    "Categorias",
-    "Classe",
-    "Local",
-    "Destaque",
-    "Mapa",
-]].copy()
+    if classe_sel:
+        view = view[view["Classe"].isin(classe_sel)]
 
-st.subheader("Actividades")
+    today = dt.date.today()
+    if quick != "(Nenhum)":
+        if quick == "Este mês":
+            start = dt.date(today.year, today.month, 1)
+            end = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
+        elif quick == "Próximos 7 dias":
+            start = today
+            end = today + dt.timedelta(days=7)
+        else:
+            start = today
+            end = today + dt.timedelta(days=30)
 
-# ----------------------------
-# Output: Cards mobile / Tabela desktop
-# ----------------------------
-if is_mobile:
-    for _, row in out.iterrows():
+        view = view[
+            (view["Data_Inicio"].notna()) &
+            (view["Data_Fim"].notna()) &
+            (view["Data_Inicio"] <= end) &
+            (view["Data_Fim"] >= start)
+        ]
+
+    if search.strip():
+        q = search.strip().lower()
+        cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local", "Mes"]
+        mask = False
+        for col in cols:
+            mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
+        view = view[mask]
+
+    # Metrics (Apple style)
+    total, next_date, this_month_count = compute_metrics(view)
+    m1, m2, m3 = st.columns(3)
+    with m1:
         st.markdown(f"""
-        <div class="card">
-          <div style="font-weight:700; font-size:1.05rem;">{row['Actividade']}</div>
-          <div class="small">📅 {row['Data (mês + dia)']}
-            <span class="badge">{row['DIV']}</span>
-            {f'<span class="badge">{row["Destaque"]}</span>' if str(row["Destaque"]).strip() else ''}
-          </div>
-          <div class="small"><b>Categorias:</b> {row['Categorias']}</div>
-          <div class="small"><b>Classe:</b> {row['Classe']}</div>
-          <div class="small"><b>Local:</b> {row['Local']}</div>
-          <div style="margin-top:10px;">
-            <a href="{row['Mapa']}" target="_blank">📍 Abrir no Maps</a>
-          </div>
+        <div class="metric">
+          <div class="label">Eventos</div>
+          <div class="value">{total}</div>
+          <div class="hint">na selecção actual</div>
         </div>
         """, unsafe_allow_html=True)
-else:
-    st.dataframe(
-        out,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
-            "Destaque": st.column_config.TextColumn("Destaque", help="Indicador visual por classe"),
-        },
+    with m2:
+        nxt = next_date.strftime("%d/%m") if next_date else "—"
+        st.markdown(f"""
+        <div class="metric">
+          <div class="label">Próximo</div>
+          <div class="value">{nxt}</div>
+          <div class="hint">data de início</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with m3:
+        st.markdown(f"""
+        <div class="metric">
+          <div class="label">Este mês</div>
+          <div class="value">{this_month_count}</div>
+          <div class="hint">eventos a decorrer</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("### Actividades")
+
+    out = view[[
+        "Data (mês + dia)",
+        "DIV",
+        "Actividade",
+        "Categorias",
+        "Classe",
+        "Local",
+        "Destaque",
+        "Mapa",
+    ]].copy()
+
+    # Output: wallet cards on mobile, clean table on desktop
+    if is_mobile:
+        for _, row in out.iterrows():
+            badge_div = row["DIV"]
+            badge_rank = normalize_text(row["Destaque"])
+            pills = f'<span class="pill">{badge_div}</span>'
+            if badge_rank:
+                pills += f' <span class="pill">{badge_rank}</span>'
+
+            st.markdown(f"""
+            <div class="card">
+              <div class="title">{row['Actividade']}</div>
+              <div class="row">{row['Data (mês + dia)']} &nbsp; {pills}</div>
+              <div class="row"><b>Categorias:</b> {row['Categorias']}</div>
+              <div class="row"><b>Classe:</b> {row['Classe']}</div>
+              <div class="row"><b>Local:</b> {row['Local']}</div>
+              <div class="actions">
+                <a href="{row['Mapa']}" target="_blank">Abrir no Maps →</a>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.dataframe(
+            out,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
+                "Destaque": st.column_config.TextColumn("Destaque"),
+            }
+        )
+
+    st.download_button(
+        "Download CSV (filtrado)",
+        data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
+        file_name=f"calendario_fppadel_{pdf_name.replace('.pdf','')}.csv",
+        mime="text/csv"
     )
 
-st.download_button(
-    "Download CSV (filtrado)",
-    data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
-    file_name=f"calendario_fppadel_{pdf_name.replace('.pdf','')}.csv",
-    mime="text/csv"
-)
+with tab_abs:
+    render_view("ABS")
+
+with tab_jov:
+    render_view("JOV")
+
+with tab_all:
+    render_view(None)
