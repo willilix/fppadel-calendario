@@ -524,7 +524,28 @@ def compute_metrics(df_view: pd.DataFrame):
 # -------------------------------------------------
 # TOP-LEVEL NAV: Calendário vs Pontos
 # -------------------------------------------------
-tab_cal, tab_pts = st.tabs(["📅 Calendário", "🧮 Pontos"])
+# ---------- HEADER COM TABS + BOTÃO RANKINGS ----------
+
+col_tabs, col_btn = st.columns([5, 1])
+
+with col_tabs:
+    tab_cal, tab_pts = st.tabs(["📅 Calendário", "🧮 Pontos"])
+
+with col_btn:
+    st.link_button(
+        "🏆 Rankings",
+        "https://tour.tiesports.com/fpp/weekly_rankings",
+        use_container_width=True
+    )
+
+# ---------- CONTEÚDO DAS TABS ----------
+
+with tab_cal:
+    render_calendar()
+
+with tab_pts:
+    render_points_calculator()
+
 
 # -------------------------------------------------
 # CALENDÁRIO TAB (tua app original)
