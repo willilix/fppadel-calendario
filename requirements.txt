@@ -5,5 +5,4 @@ beautifulsoup4
 pdfplumber
 pdfminer.six
 playwright==1.58.0
-playwright-browsers
 unidecode
