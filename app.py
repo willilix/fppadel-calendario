@@ -19,30 +19,67 @@ st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="w
 # CSS (só visual; não mexe na lógica)
 st.markdown("""
 <style>
-.block-container {padding-top: 1.4rem; padding-bottom: 3rem;}
+/* Layout geral */
+.block-container { padding-top: 1.25rem; padding-bottom: 3rem; max-width: 1100px; }
+header { visibility: hidden; height: 0px; }
 
-h1 {margin-bottom: 0.25rem;}
-.sub {opacity: 0.75; margin-bottom: 1.25rem;}
+/* Tipografia */
+h1, h2, h3 { letter-spacing: -0.02em; }
+h1 { font-size: 2rem; margin-bottom: 0.25rem; }
+.sub { color: rgba(17,17,17,0.65); margin-bottom: 1.1rem; font-size: 0.98rem; }
 
+/* Cards Apple-like */
 .card {
   padding: 16px 16px;
-  border-radius: 16px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  background: #FFFFFF;
+  border: 1px solid rgba(17,17,17,0.06);
+  box-shadow: 0 10px 30px rgba(17,17,17,0.06);
   margin-bottom: 12px;
 }
-.small {opacity: 0.85; font-size: 0.92rem;}
+.small { color: rgba(17,17,17,0.70); font-size: 0.95rem; line-height: 1.35; }
+
+/* Badges tipo "pill" */
 .badge {
-  display:inline-block;
-  padding: 3px 10px;
+  display:inline-flex;
+  align-items:center;
+  padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.2);
+  border: 1px solid rgba(17,17,17,0.10);
+  background: rgba(17,17,17,0.03);
   font-size: 0.78rem;
   margin-left: 6px;
 }
-a {text-decoration: none;}
+
+/* Links estilo iOS */
+a, a:visited { color: #0A84FF !important; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Inputs com look mais clean */
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div {
+  border-radius: 14px !important;
+}
+
+/* Botões arredondados */
+button[kind="primary"], button[kind="secondary"], .stButton button {
+  border-radius: 14px !important;
+  padding: 0.55rem 0.9rem !important;
+}
+
+/* Dataframe mais clean (desktop) */
+[data-testid="stDataFrame"] {
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(17,17,17,0.08);
+  box-shadow: 0 10px 30px rgba(17,17,17,0.04);
+}
+
+/* Dividers suaves */
+hr { border-top: 1px solid rgba(17,17,17,0.08); }
 </style>
 """, unsafe_allow_html=True)
+
 
 # -------------------------------------------------
 # CONSTANTES
@@ -424,8 +461,9 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 # -------------------------------------------------
 # UI
 # -------------------------------------------------
-st.title("🎾 Calendário FPPadel")
-st.markdown('<div class="sub">Eventos ABS e JOV com actualização automática</div>', unsafe_allow_html=True)
+st.markdown("## Calendário FPPadel")
+st.markdown('<div class="sub">Eventos ABS e JOV • actualização automática • links para Maps</div>', unsafe_allow_html=True)
+
 
 # botão update
 topl, topr = st.columns([1, 1])
@@ -566,7 +604,7 @@ if is_mobile:
           <div style="font-weight:700; font-size:1.05rem;">{row['Actividade']}</div>
           <div class="small">📅 {row['Data (mês + dia)']}
             <span class="badge">{row['DIV']}</span>
-            <span class="badge">{row['Destaque']}</span>
+            {f'<span class="badge">{row["Destaque"]}</span>' if str(row["Destaque"]).strip() else ''}
           </div>
           <div class="small"><b>Categorias:</b> {row['Categorias']}</div>
           <div class="small"><b>Classe:</b> {row['Classe']}</div>
