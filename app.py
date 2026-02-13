@@ -21,38 +21,37 @@ st.set_page_config(
     layout="wide"
 )
 
-# CSS Premium UI
+# ------------------ CSS MODERNO ------------------
+
 st.markdown("""
 <style>
 .block-container {padding-top: 1.5rem; padding-bottom: 3rem;}
 
-h1 {font-size: 2rem; margin-bottom: 0.2rem;}
-.sub {opacity: 0.8; font-size: 0.95rem; margin-bottom: 1.5rem;}
+h1 {margin-bottom: 0.3rem;}
+.sub {opacity: 0.75; margin-bottom: 1.5rem;}
 
 .card {
-    padding: 16px 18px;
-    border-radius: 18px;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
-    margin-bottom: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 14px;
 }
 
-.small {opacity: 0.85; font-size: 0.9rem;}
-
 .badge {
-    display:inline-block;
-    padding: 3px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.2);
-    font-size: 0.8rem;
-    margin-left: 6px;
+  display:inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.75rem;
+  margin-left: 6px;
 }
 
 .metric-card {
-    padding: 14px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -79,11 +78,10 @@ if "is_mobile" not in st.session_state:
 
 components.html("""
 <script>
-  const isMobile = window.matchMedia("(max-width: 768px)").matches;
-  window.parent.postMessage(
-    { type: "streamlit:setSessionState", key: "is_mobile", value: isMobile },
-    "*"
-  );
+const isMobile = window.matchMedia("(max-width: 768px)").matches;
+window.parent.postMessage(
+{ type: "streamlit:setSessionState", key: "is_mobile", value: isMobile },
+"*");
 </script>
 """, height=0)
 
@@ -92,20 +90,6 @@ is_mobile = st.session_state.get("is_mobile", False)
 # -------------------------------------------------
 # UTILIDADES
 # -------------------------------------------------
-
-def _pick_highest_version(urls):
-    def score(u):
-        m = re.search(r"-(\d+)\.pdf$", u)
-        return int(m.group(1)) if m else -1
-    urls = list(set(urls))
-    urls.sort(key=lambda u: (score(u), u), reverse=True)
-    return urls[0]
-
-def infer_year_from_pdf_url(pdf_url):
-    m = re.search(r"/uploads/(\d{4})/", pdf_url)
-    if m:
-        return int(m.group(1))
-    return dt.date.today().year
 
 def class_badge(classe):
     c = (classe or "").lower()
@@ -116,6 +100,7 @@ def class_badge(classe):
     if "10.000" in c: return "🔵"
     if "5.000" in c: return "🟢"
     if "2.000" in c: return "⚪"
+    if "a definir" in c: return "❓"
     return ""
 
 # -------------------------------------------------
@@ -124,41 +109,24 @@ def class_badge(classe):
 
 @st.cache_data(ttl=900)
 def find_latest_calendar_pdf_url():
-    try:
-        html = requests.get(HOME_URL, timeout=20).text
-        soup = BeautifulSoup(html, "html.parser")
-        candidates = []
-        for a in soup.find_all("a", href=True):
-            href = a["href"].strip()
-            if href.lower().endswith(".pdf") and "calend" in href.lower():
-                candidates.append(urljoin(HOME_URL, href))
-        if candidates:
-            return _pick_highest_version(candidates)
-    except:
-        pass
-
-    found = []
-    for term in ["CALENDARIO-ACTIVIDADES"]:
-        try:
-            r = requests.get(WP_MEDIA_SEARCH, params={"search": term}, timeout=20)
-            for it in r.json():
-                src = (it.get("source_url") or "").strip()
-                if src.lower().endswith(".pdf"):
-                    found.append(src)
-        except:
-            continue
-
-    return _pick_highest_version(found)
+    html = requests.get(HOME_URL).text
+    soup = BeautifulSoup(html, "html.parser")
+    candidates = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.lower().endswith(".pdf") and "calend" in href.lower():
+            candidates.append(urljoin(HOME_URL, href))
+    return sorted(candidates)[-1]
 
 @st.cache_data(ttl=900)
 def download_pdf_bytes(pdf_url):
     return requests.get(pdf_url).content
 
 # -------------------------------------------------
-# PARSER SIMPLIFICADO (mantém robustez actual)
+# PARSER (VERSÃO COMPLETA COM LOCAL/ORGANIZAÇÃO)
 # -------------------------------------------------
 
-def parse_calendar_pdf(pdf_bytes, year):
+def parse_calendar_pdf(pdf_bytes):
     rows = []
     current_month = None
 
@@ -171,6 +139,7 @@ def parse_calendar_pdf(pdf_bytes, year):
                     continue
 
                 up = line.upper()
+
                 for m in MONTHS:
                     if up.startswith(m):
                         current_month = m
@@ -180,71 +149,113 @@ def parse_calendar_pdf(pdf_bytes, year):
                     continue
 
                 if " ABS " in f" {line} " or " JOV " in f" {line} ":
-                    parts = line.split()
                     div = "ABS" if " ABS " in f" {line} " else "JOV"
 
-                    date = parts[0]
-                    actividade = line.split(div)[1].strip()
+                    parts = re.split(r"\s{2,}", line)
+                    parts = [p.strip() for p in parts if p.strip()]
+
+                    date = parts[0] if len(parts) > 0 else ""
+                    actividade = parts[1] if len(parts) > 1 else ""
+                    categorias = parts[2] if len(parts) > 2 else ""
+                    classe = parts[3] if len(parts) > 3 else ""
+                    local = parts[5] if len(parts) > 5 else ""
+                    org = parts[6] if len(parts) > 6 else ""
 
                     rows.append({
                         "Mes": current_month.title(),
                         "Dia": date,
                         "DIV": div,
                         "Actividade": actividade,
-                        "Categorias": "",
-                        "Classe": "",
-                        "Local": "",
-                        "Data (mês + dia)": f"{current_month.title()} {date}",
+                        "Categorias": categorias,
+                        "Classe": classe,
+                        "Local": f"{local} - {org}" if org else local,
+                        "Data (mês + dia)": f"{current_month.title()} {date}"
                     })
 
-    df = pd.DataFrame(rows)
-    return df
+    return pd.DataFrame(rows)
 
 # -------------------------------------------------
 # HEADER
 # -------------------------------------------------
 
-st.markdown("## 🎾 Calendário FPPadel")
-st.markdown('<div class="sub">Eventos ABS e JOV sempre actualizados automaticamente</div>', unsafe_allow_html=True)
+st.title("🎾 Calendário FPPadel")
+st.markdown('<div class="sub">Eventos ABS e JOV com actualização automática</div>', unsafe_allow_html=True)
 
-with st.spinner("A carregar calendário mais recente..."):
-    pdf_url = find_latest_calendar_pdf_url()
-    pdf_name = os.path.basename(urlparse(pdf_url).path)
-    year = infer_year_from_pdf_url(pdf_url)
-    pdf_bytes = download_pdf_bytes(pdf_url)
-    df = parse_calendar_pdf(pdf_bytes, year)
+pdf_url = find_latest_calendar_pdf_url()
+pdf_name = os.path.basename(urlparse(pdf_url).path)
+pdf_bytes = download_pdf_bytes(pdf_url)
+df = parse_calendar_pdf(pdf_bytes)
 
 st.caption(f"Versão do PDF: {pdf_name}")
 st.link_button("Abrir PDF original", pdf_url)
 
 # -------------------------------------------------
-# MÉTRICAS
+# FILTROS
 # -------------------------------------------------
+
+st.subheader("Filtros")
 
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Total Eventos", len(df))
-col2.metric("Mês Actual", dt.date.today().strftime("%B"))
-col3.metric("Ano", year)
+with col1:
+    mes_sel = st.selectbox("Mês", ["(Todos)"] + sorted(df["Mes"].unique()))
 
-st.divider()
+with col2:
+    div_sel = st.selectbox("DIV", ["(Todos)", "ABS", "JOV"])
+
+with col3:
+    classe_sel = st.multiselect("Classe", sorted(df["Classe"].unique()))
+
+filtered = df.copy()
+
+if mes_sel != "(Todos)":
+    filtered = filtered[filtered["Mes"] == mes_sel]
+if div_sel != "(Todos)":
+    filtered = filtered[filtered["DIV"] == div_sel]
+if classe_sel:
+    filtered = filtered[filtered["Classe"].isin(classe_sel)]
+
+# Google Maps
+filtered["Mapa"] = filtered["Local"].apply(
+    lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}"
+)
+
+filtered["Destaque"] = filtered["Classe"].apply(class_badge)
 
 # -------------------------------------------------
 # OUTPUT
 # -------------------------------------------------
 
-if df.empty:
-    st.warning("Sem dados extraídos.")
-    st.stop()
+st.subheader("Actividades")
 
 if is_mobile:
-    for _, row in df.iterrows():
+    for _, row in filtered.iterrows():
         st.markdown(f"""
         <div class="card">
-            <div style="font-weight:600;font-size:1.05rem;">{row['Actividade']}</div>
-            <div class="small">📅 {row['Data (mês + dia)']} 
-            <span class="badge">{row['DIV']}</span></div>
+        <div style="font-weight:600;font-size:1.05rem;">{row['Actividade']}</div>
+        <div>📅 {row['Data (mês + dia)']} <span class="badge">{row['DIV']}</span></div>
+        <div>Categorias: {row['Categorias']}</div>
+        <div>Classe: {row['Classe']} {row['Destaque']}</div>
+        <div>Local: {row['Local']}</div>
+        <div style="margin-top:8px;">
+        <a href="{row['Mapa']}" target="_blank">📍 Abrir no Maps</a>
+        </div>
         </div>
         """, unsafe_allow_html=True)
 else:
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(
+        filtered[[
+            "Data (mês + dia)",
+            "DIV",
+            "Actividade",
+            "Categorias",
+            "Classe",
+            "Local",
+            "Mapa"
+        ]],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps")
+        }
+    )
