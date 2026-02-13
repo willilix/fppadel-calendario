@@ -8,6 +8,7 @@ import pandas as pd
 import pdfplumber
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
 HOME_URL = "https://fppadel.pt/"
@@ -20,6 +21,30 @@ MONTHS = [
 MONTH_TO_NUM = {m.title(): i for i, m in enumerate(MONTHS, start=1)}
 
 st.set_page_config(page_title="Calendário FPPadel", layout="wide")
+
+
+# ----------------------------
+# Mobile detection (best-effort)
+# ----------------------------
+if "is_mobile" not in st.session_state:
+    st.session_state["is_mobile"] = False
+
+components.html(
+    """
+    <script>
+      try {
+        const isMobile = window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+        window.parent.postMessage(
+          { type: "streamlit:setSessionState", key: "is_mobile", value: !!isMobile },
+          "*"
+        );
+      } catch (e) {}
+    </script>
+    """,
+    height=0,
+)
+
+is_mobile = bool(st.session_state.get("is_mobile", False))
 
 
 # ----------------------------
@@ -165,7 +190,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 
 
 # ----------------------------
-# Parsing PDF -> DataFrame (com colunas por coordenadas)
+# Parsing PDF -> DataFrame (LOCAL/ORGANIZAÇÃO por coordenadas)
 # ----------------------------
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     """
@@ -178,8 +203,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
       - LOCAL (da coluna LOCAL do PDF)
       - ORGANIZAÇÃO (da coluna ORGANIZAÇÃO do PDF)
 
-    A separação LOCAL/ORGANIZAÇÃO é feita por coordenadas (x) do cabeçalho,
-    para ficar correcta mesmo quando têm várias palavras.
+    Usa coordenadas do cabeçalho para separar LOCAL/ORGANIZAÇÃO mesmo com várias palavras.
     """
 
     def looks_like_money(tok: str) -> bool:
@@ -189,22 +213,17 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
         return bool(re.fullmatch(r"(F|M|S)\d{1,2}", tok)) or tok in {"VET", "FIP"}
 
     def group_words_into_rows(words, y_tol=3):
-        """
-        Agrupa words por linha usando a coordenada 'top' (y), com tolerância.
-        """
         rows = []
         for w in sorted(words, key=lambda x: (x["top"], x["x0"])):
             placed = False
             for r in rows:
                 if abs(w["top"] - r["y"]) <= y_tol:
                     r["words"].append(w)
-                    # actualiza y médio para estabilizar
                     r["y"] = (r["y"] * (len(r["words"]) - 1) + w["top"]) / len(r["words"])
                     placed = True
                     break
             if not placed:
                 rows.append({"y": w["top"], "words": [w]})
-        # ordenar palavras por x
         for r in rows:
             r["words"] = sorted(r["words"], key=lambda x: x["x0"])
         return rows
@@ -214,35 +233,27 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
-            # Extrair palavras com posições
             words = page.extract_words(use_text_flow=True) or []
             if not words:
                 continue
 
-            # Agrupar por linhas
             line_rows = group_words_into_rows(words, y_tol=3)
 
-            # Detectar colunas LOCAL e ORGANIZAÇÃO pelo cabeçalho (por página)
+            # detectar posições x das colunas LOCAL e ORGANIZAÇÃO pelo cabeçalho
             x_local = None
             x_org = None
 
             for lr in line_rows:
                 line_text = " ".join(w["text"] for w in lr["words"]).strip()
                 up = line_text.upper()
-
-                # detectar o cabeçalho e guardar as posições x
-                # (aceita "ORGANIZAÇÃO" com/sem acentos por segurança)
                 if ("LOCAL" in up) and ("ORGAN" in up) and ("DIV" in up) and ("ACTIV" in up):
                     for w in lr["words"]:
                         t = w["text"].upper()
                         if t == "LOCAL":
                             x_local = w["x0"]
-                        if t.startswith("ORGAN"):  # ORGANIZAÇÃO / ORGANIZACAO
+                        if t.startswith("ORGAN"):
                             x_org = w["x0"]
-                    # não faz break; às vezes há cabeçalhos repetidos
-                    continue
 
-            # Agora processar linhas
             for lr in line_rows:
                 line_text = " ".join(w["text"] for w in lr["words"]).strip()
                 if not line_text:
@@ -264,21 +275,20 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                         break
                     if up.startswith(m + " "):
                         month_found = m
-                        # remover prefixo do mês do texto para o parser por tokens
                         line_text = line_text[len(m):].strip()
                         break
 
                 if month_found:
                     current_month = month_found
-                    # se a linha era só o mês, não é evento
                     if up == month_found:
                         continue
 
                 if not current_month:
                     continue
 
-                # precisamos de ABS/JOV na linha
                 tokens = line_text.split()
+
+                # encontrar DIV
                 div_idx = None
                 for i, t in enumerate(tokens):
                     if t in ("ABS", "JOV"):
@@ -289,7 +299,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 
                 div = tokens[div_idx]
 
-                # antes do DIV: data + tipo (tipo pode ser 1-2 tokens)
+                # data (texto)
                 pre = tokens[:div_idx]
                 tipo_set = {"CIR", "FPP", "FOR", "INT"}
                 if len(pre) >= 2 and pre[-2] in tipo_set:
@@ -310,7 +320,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                         euro_idx = i
                         break
 
-                # determinar classe
+                # classe
                 class_end = euro_idx if euro_idx is not None else len(rest)
                 classe = ""
                 class_start = None
@@ -361,27 +371,28 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 actividade = " ".join(actividade_tokens).strip()
                 categorias = " ".join(categorias_tokens).strip()
 
-                # LOCAL e ORGANIZAÇÃO por coordenadas (x)
+                # LOCAL e ORGANIZAÇÃO por coordenadas
                 local_col = ""
                 org_col = ""
-
                 if x_local is not None and x_org is not None:
-                    # palavras desta linha que caem em cada coluna
-                    # pequena margem para evitar apanhar coisas coladas ao limite
                     margin = 2.0
-                    local_words = [w["text"] for w in lr["words"] if (w["x0"] >= x_local - margin) and (w["x0"] < x_org - margin)]
-                    org_words = [w["text"] for w in lr["words"] if (w["x0"] >= x_org - margin)]
+                    local_words = [
+                        w["text"] for w in lr["words"]
+                        if (w["x0"] >= x_local - margin) and (w["x0"] < x_org - margin)
+                    ]
+                    org_words = [
+                        w["text"] for w in lr["words"]
+                        if (w["x0"] >= x_org - margin)
+                    ]
                     local_col = " ".join(local_words).strip()
                     org_col = " ".join(org_words).strip()
 
-                    # limpar: por vezes vêm títulos/ruído
-                    # (não mexe muito, só remove duplicações óbvias)
-                    if local_col.upper() in ("LOCAL",):
+                    if local_col.upper() == "LOCAL":
                         local_col = ""
                     if org_col.upper().startswith("ORGAN"):
                         org_col = ""
                 else:
-                    # fallback antigo (menos preciso) se não detectarmos cabeçalho na página
+                    # fallback (menos preciso)
                     if euro_idx is not None and euro_idx + 1 < len(rest):
                         local_col = rest[euro_idx + 1]
                         org_col = " ".join(rest[euro_idx + 2:]).strip() if euro_idx + 2 < len(rest) else ""
@@ -414,7 +425,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     df = df[df["DIV"].isin(["ABS", "JOV"])].copy()
     df.drop_duplicates(inplace=True)
 
-    # ordenar por data real
     df["SortDate"] = df["Data_Inicio"].fillna(pd.Timestamp.max.date())
     df.sort_values(["SortDate", "DIV", "Actividade"], inplace=True)
     df.drop(columns=["SortDate"], inplace=True)
@@ -427,11 +437,12 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 # ----------------------------
 st.title("Calendário FPPadel — tabela dinâmica (ABS/JOV)")
 
-top_left, top_right = st.columns([1, 1])
-with top_right:
-    if st.button("🔄 Forçar actualizar agora"):
-        st.cache_data.clear()
-        st.rerun()
+with st.container():
+    left, right = st.columns([1, 1])
+    with right:
+        if st.button("🔄 Forçar actualizar agora"):
+            st.cache_data.clear()
+            st.rerun()
 
 with st.spinner("A detectar o PDF mais recente e a extrair dados..."):
     pdf_url = find_latest_calendar_pdf_url()
@@ -455,30 +466,31 @@ if df.empty:
     st.stop()
 
 # ----------------------------
-# Filtros
+# Filtros (mobile friendly)
 # ----------------------------
-st.subheader("Filtros")
-
-c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-
-with c1:
-    mes_opts = sorted(df["Mes"].unique(), key=lambda x: MONTHS.index(x.upper()) if x.upper() in MONTHS else 999)
-    mes_sel = st.selectbox("Mês", options=["(Todos)"] + mes_opts)
-
-with c2:
-    div_sel = st.selectbox("DIV", options=["(Todos)", "ABS", "JOV"])
-
-with c3:
-    classes = sorted([c for c in df["Classe"].unique() if isinstance(c, str) and c.strip()])
-    classe_sel = st.multiselect("Classe", options=classes, default=[])
-
-with c4:
-    quick = st.selectbox(
-        "Filtro rápido (datas)",
-        options=["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"],
-    )
-
-search = st.text_input("Pesquisa (ex: Lisboa, FIP, S14, Madeira, nome do clube...)")
+if is_mobile:
+    with st.expander("🔎 Filtros", expanded=False):
+        mes_opts = sorted(df["Mes"].unique(), key=lambda x: MONTHS.index(x.upper()) if x.upper() in MONTHS else 999)
+        mes_sel = st.selectbox("Mês", options=["(Todos)"] + mes_opts)
+        div_sel = st.selectbox("DIV", options=["(Todos)", "ABS", "JOV"])
+        classes = sorted([c for c in df["Classe"].unique() if isinstance(c, str) and c.strip()])
+        classe_sel = st.multiselect("Classe", options=classes, default=[])
+        quick = st.selectbox("Filtro rápido (datas)", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"])
+        search = st.text_input("Pesquisa")
+else:
+    st.subheader("Filtros")
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+    with c1:
+        mes_opts = sorted(df["Mes"].unique(), key=lambda x: MONTHS.index(x.upper()) if x.upper() in MONTHS else 999)
+        mes_sel = st.selectbox("Mês", options=["(Todos)"] + mes_opts)
+    with c2:
+        div_sel = st.selectbox("DIV", options=["(Todos)", "ABS", "JOV"])
+    with c3:
+        classes = sorted([c for c in df["Classe"].unique() if isinstance(c, str) and c.strip()])
+        classe_sel = st.multiselect("Classe", options=classes, default=[])
+    with c4:
+        quick = st.selectbox("Filtro rápido (datas)", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"])
+    search = st.text_input("Pesquisa (ex: Lisboa, FIP, S14, Madeira, nome do clube...)")
 
 filtered = df.copy()
 
@@ -551,17 +563,30 @@ out = filtered[[
     "Mapa",
 ]].copy()
 
+# ----------------------------
+# Output (tabela desktop, cartões mobile)
+# ----------------------------
 st.subheader("Actividades")
 
-st.dataframe(
-    out,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Mapa": st.column_config.LinkColumn("Mapa", display_text="Abrir no Maps"),
-        "Destaque": st.column_config.TextColumn("Destaque", help="Indicador visual por classe"),
-    },
-)
+if is_mobile:
+    for _, row in out.iterrows():
+        st.markdown(f"### {row['Actividade']}")
+        st.markdown(f"**📅 {row['Data (mês + dia)']}** · **{row['DIV']}**")
+        st.markdown(f"**Categorias:** {row['Categorias']}")
+        st.markdown(f"**Classe:** {row['Classe']} {row['Destaque']}")
+        st.markdown(f"**Local:** {row['Local']}")
+        st.markdown(f"[📍 Abrir no Maps]({row['Mapa']})")
+        st.divider()
+else:
+    st.dataframe(
+        out,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Mapa": st.column_config.LinkColumn("Mapa", display_text="Abrir no Maps"),
+            "Destaque": st.column_config.TextColumn("Destaque"),
+        },
+    )
 
 st.download_button(
     "Download CSV (filtrado)",
