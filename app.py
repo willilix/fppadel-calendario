@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
+from PIL import Image
 
 # 👇 points calculator sub-app
 from points_calculator import render_points_calculator
@@ -112,6 +113,55 @@ div[data-baseweb="input"] > div { border-radius: 14px !important; }
   background: rgba(10,132,255,0.12);
   border-color: rgba(10,132,255,0.35);
 }
+
+/* Premium hero header */
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 26px;
+  border: 1px solid rgba(17,17,17,0.08);
+  background: radial-gradient(1200px 600px at 20% 10%, rgba(10,132,255,0.18), transparent 60%),
+              radial-gradient(900px 500px at 80% 20%, rgba(90,200,250,0.18), transparent 55%),
+              rgba(255,255,255,0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 18px 55px rgba(17,17,17,0.10);
+  padding: 18px 18px;
+  margin-bottom: 14px;
+}
+.hero:before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background: linear-gradient(135deg, rgba(10,132,255,0.18), rgba(255,45,85,0.10), rgba(52,199,89,0.10));
+  filter: blur(24px);
+  opacity: 0.55;
+  pointer-events:none;
+}
+.hero-inner { position: relative; display:flex; gap:16px; align-items:center; }
+.brandmark {
+  width: 86px;
+  height: 86px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.66);
+  border: 1px solid rgba(17,17,17,0.10);
+  box-shadow: 0 16px 45px rgba(17,17,17,0.12);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+}
+.brandmark img { width: 76px; height: 76px; object-fit: contain; }
+.hero-title { font-weight: 800; font-size: 1.50rem; margin: 0; }
+.hero-sub { color: rgba(17,17,17,0.62); font-size: 0.96rem; margin-top: 4px; }
+.hero-pills { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
+@media (max-width: 768px){
+  .hero-inner { gap:12px; }
+  .brandmark { width: 72px; height: 72px; border-radius: 18px; }
+  .brandmark img { width: 62px; height: 62px; }
+  .hero-title { font-size: 1.25rem; }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -554,18 +604,45 @@ with tab_cal:
     st.session_state["last_pdf_name"] = pdf_name
     new_badge = " • 🟢 nova versão" if (prev and prev != pdf_name) else ""
 
-    st.markdown(f"""
-    <div class="topbar">
-      <div class="top-title">Calendário FPPadel</div>
-      <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
-      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-        <span class="pill">PDF: {pdf_name}</span>
-        <span class="pill">Ano: {year}</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+        # --- Premium header (hero) ---
+    logo_path = "armadura.png"
+    try:
+        with open(logo_path, "rb") as f:
+            logo_b64 = __import__("base64").b64encode(f.read()).decode("utf-8")
+    except Exception:
+        logo_b64 = None
 
-    st.link_button("Abrir PDF original", pdf_url)
+    if logo_b64:
+        st.markdown(f'''
+        <div class="hero">
+          <div class="hero-inner">
+            <div class="brandmark">
+              <img src="data:image/png;base64,{logo_b64}" />
+            </div>
+            <div style="flex:1; min-width: 240px;">
+              <div class="hero-title">Calendário FPPadel</div>
+              <div class="hero-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
+              <div class="hero-pills">
+                <span class="pill">PDF: {pdf_name}</span>
+                <span class="pill">Ano: {year}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        ''', unsafe_allow_html=True)
+    else:
+        # Fallback (sem imagem)
+        st.markdown(f'''
+        <div class="topbar">
+          <div class="top-title">Calendário FPPadel</div>
+          <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
+          <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+            <span class="pill">PDF: {pdf_name}</span>
+            <span class="pill">Ano: {year}</span>
+          </div>
+        </div>
+        ''', unsafe_allow_html=True)
+st.link_button("Abrir PDF original", pdf_url)
 
     if df.empty:
         st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
