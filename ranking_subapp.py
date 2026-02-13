@@ -105,31 +105,35 @@ def _find_filter_button_name_value(soup: BeautifulSoup) -> tuple[str, str] | Non
 
 
 @st.cache_data(ttl=300)
-def fetch_player_by_license(license_no: str, rank: str = "absolutos") -> dict | None:
+def fetch_player_by_license(license_no: str, rank: str = "absolutos", max_pages: int = 25):
     """
-    Estratégia:
-    1) GET a página
-    2) POST 'FILTRAR' com Nome/Licença = license_no (como o UI)
-    3) Parse UpdatePanel5 e procurar a linha
+    Percorre as páginas do ranking (?page=1,2,3...) até encontrar a licença.
+    Muito mais estável que simular WebForms.
     """
-    url = f"{BASE_URL}?rank={rank}"
-    s = requests.Session()
 
-    # 1) GET
-    r = s.get(url, timeout=25)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
+    session = requests.Session()
 
-    hidden = _get_hidden_fields_from_soup(soup)
-    license_field_name = _find_input_name_for_license(soup)
-    btn = _find_filter_button_name_value(soup)
+    for page in range(1, max_pages + 1):
+        url = f"{BASE_URL}?rank={rank}&page={page}"
 
-    if not license_field_name or not btn:
-        # fallback: tentar extrair no HTML inicial (top10)
-        for row in _extract_rows_from_html(r.text):
+        try:
+            r = session.get(url, timeout=20)
+            r.raise_for_status()
+        except Exception:
+            continue
+
+        rows = _extract_rows_from_html(r.text)
+
+        if not rows:
+            break  # chegou ao fim
+
+        for row in rows:
             if row["licenca"] == str(license_no):
+                row["page"] = page
                 return row
-        return None
+
+    return None
+
 
     btn_name, btn_value = btn
 
