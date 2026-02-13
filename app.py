@@ -37,10 +37,7 @@ def _pick_highest_version(urls: list[str]) -> str:
 
 
 def infer_year_from_pdf_url(pdf_url: str) -> int:
-    """
-    Tenta inferir o ano pelo caminho /wp-content/uploads/YYYY/...
-    Fallback: ano actual.
-    """
+    """Tenta inferir o ano pelo caminho /wp-content/uploads/YYYY/..."""
     m = re.search(r"/uploads/(\d{4})/", pdf_url)
     if m:
         return int(m.group(1))
@@ -49,17 +46,12 @@ def infer_year_from_pdf_url(pdf_url: str) -> int:
 
 def parse_day_range_to_dates(day_text: str, month_num: int, year: int) -> tuple[dt.date | None, dt.date | None]:
     """
-    Converte textos tipo:
-      - "4 a 8"
-      - "6-8"
-      - "27"
-      - "27 a 1"  (assume que cruza para o mês seguinte se fim < início)
+    Converte textos tipo "4 a 8", "6-8", "27", "27 a 1" (cruza mês se fim < início)
     para (data_inicio, data_fim).
     """
     if not day_text:
         return None, None
 
-    # apanha números na string
     nums = re.findall(r"\d{1,2}", day_text)
     if not nums:
         return None, None
@@ -72,7 +64,6 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int) -> tuple[
     except ValueError:
         return None, None
 
-    # se fim < inicio, assume mês seguinte
     end_month = month_num
     end_year = year
     if end_day < start_day:
@@ -95,18 +86,7 @@ def normalize_text(s: str) -> str:
 
 
 def class_badge(classe: str) -> str:
-    """
-    Destaque visual simples por classe.
-    - Gold / 50.000 -> 🥇
-    - Silver -> 🥈
-    - Bronze -> 🥉
-    - Continental / Promises -> 🌍
-    - >= 10.000 -> 🔵
-    - 5.000 -> 🟢
-    - 2.000 -> ⚪
-    """
     c = (classe or "").lower()
-
     if "gold" in c or "50.000" in c:
         return "🥇"
     if "silver" in c:
@@ -116,7 +96,6 @@ def class_badge(classe: str) -> str:
     if "continental" in c or "promises" in c:
         return "🌍"
 
-    # tenta extrair valor (ex: "10.000 / Bronze" -> 10000)
     m = re.search(r"(\d{1,3}(?:\.\d{3})+)", classe or "")
     value = None
     if m:
@@ -186,13 +165,21 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 
 
 # ----------------------------
-# Parsing PDF -> DataFrame
+# Parsing PDF -> DataFrame (com colunas por coordenadas)
 # ----------------------------
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     """
-    Parser robusto para PDFs onde as colunas podem vir separadas por 1 espaço.
-    Extrai: Data (mês+dia), DIV (ABS/JOV), Actividade, Categorias, Classe, Local, Organização.
-    Cria Data_Inicio e Data_Fim para ordenação e filtros temporais.
+    Extrai:
+      - Data (mês+dia)
+      - DIV (ABS/JOV)
+      - Actividade
+      - Categorias
+      - Classe
+      - LOCAL (da coluna LOCAL do PDF)
+      - ORGANIZAÇÃO (da coluna ORGANIZAÇÃO do PDF)
+
+    A separação LOCAL/ORGANIZAÇÃO é feita por coordenadas (x) do cabeçalho,
+    para ficar correcta mesmo quando têm várias palavras.
     """
 
     def looks_like_money(tok: str) -> bool:
@@ -201,44 +188,97 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     def is_category_token(tok: str) -> bool:
         return bool(re.fullmatch(r"(F|M|S)\d{1,2}", tok)) or tok in {"VET", "FIP"}
 
-    rows = []
+    def group_words_into_rows(words, y_tol=3):
+        """
+        Agrupa words por linha usando a coordenada 'top' (y), com tolerância.
+        """
+        rows = []
+        for w in sorted(words, key=lambda x: (x["top"], x["x0"])):
+            placed = False
+            for r in rows:
+                if abs(w["top"] - r["y"]) <= y_tol:
+                    r["words"].append(w)
+                    # actualiza y médio para estabilizar
+                    r["y"] = (r["y"] * (len(r["words"]) - 1) + w["top"]) / len(r["words"])
+                    placed = True
+                    break
+            if not placed:
+                rows.append({"y": w["top"], "words": [w]})
+        # ordenar palavras por x
+        for r in rows:
+            r["words"] = sorted(r["words"], key=lambda x: x["x0"])
+        return rows
+
+    rows_out = []
     current_month = None
 
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
-            text = page.extract_text() or ""
-            for raw_line in text.splitlines():
-                line = raw_line.strip()
-                if not line:
+            # Extrair palavras com posições
+            words = page.extract_words(use_text_flow=True) or []
+            if not words:
+                continue
+
+            # Agrupar por linhas
+            line_rows = group_words_into_rows(words, y_tol=3)
+
+            # Detectar colunas LOCAL e ORGANIZAÇÃO pelo cabeçalho (por página)
+            x_local = None
+            x_org = None
+
+            for lr in line_rows:
+                line_text = " ".join(w["text"] for w in lr["words"]).strip()
+                up = line_text.upper()
+
+                # detectar o cabeçalho e guardar as posições x
+                # (aceita "ORGANIZAÇÃO" com/sem acentos por segurança)
+                if ("LOCAL" in up) and ("ORGAN" in up) and ("DIV" in up) and ("ACTIV" in up):
+                    for w in lr["words"]:
+                        t = w["text"].upper()
+                        if t == "LOCAL":
+                            x_local = w["x0"]
+                        if t.startswith("ORGAN"):  # ORGANIZAÇÃO / ORGANIZACAO
+                            x_org = w["x0"]
+                    # não faz break; às vezes há cabeçalhos repetidos
                     continue
 
-                upper = line.upper()
-
-                # ignora cabeçalhos
-                if "MÊS" in upper and "ACTIVIDADES" in upper and "DIV" in upper:
-                    continue
-                if upper.startswith("CALEND"):
+            # Agora processar linhas
+            for lr in line_rows:
+                line_text = " ".join(w["text"] for w in lr["words"]).strip()
+                if not line_text:
                     continue
 
-                # detectar mês (muitas vezes vem como "FEVEREIRO 4 a 8 CIR ABS ...")
+                up = line_text.upper()
+
+                # ignorar cabeçalhos
+                if "MÊS" in up and "ACTIVIDADES" in up and "DIV" in up:
+                    continue
+                if up.startswith("CALEND"):
+                    continue
+
+                # detectar mês (linha só com mês ou mês no início)
                 month_found = None
                 for m in MONTHS:
-                    if upper.startswith(m + " "):
+                    if up == m:
                         month_found = m
                         break
+                    if up.startswith(m + " "):
+                        month_found = m
+                        # remover prefixo do mês do texto para o parser por tokens
+                        line_text = line_text[len(m):].strip()
+                        break
+
                 if month_found:
                     current_month = month_found
-                    line = line[len(month_found):].strip()
-                elif upper in MONTHS:
-                    current_month = upper
-                    continue
+                    # se a linha era só o mês, não é evento
+                    if up == month_found:
+                        continue
 
                 if not current_month:
                     continue
 
-                tokens = line.split()
-
-                # encontrar DIV
+                # precisamos de ABS/JOV na linha
+                tokens = line_text.split()
                 div_idx = None
                 for i, t in enumerate(tokens):
                     if t in ("ABS", "JOV"):
@@ -252,7 +292,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 # antes do DIV: data + tipo (tipo pode ser 1-2 tokens)
                 pre = tokens[:div_idx]
                 tipo_set = {"CIR", "FPP", "FOR", "INT"}
-
                 if len(pre) >= 2 and pre[-2] in tipo_set:
                     day_text = " ".join(pre[:-2]).strip()
                 elif len(pre) >= 1 and pre[-1] in tipo_set:
@@ -264,31 +303,18 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if not rest:
                     continue
 
-                # localizar token com € (prize-money). No PDF costuma ser:
-                # ... CLASSE  PRIZE€  LOCAL  ORGANIZAÇÃO...
+                # localizar token com €
                 euro_idx = None
                 for i, t in enumerate(rest):
                     if "€" in t:
                         euro_idx = i
                         break
 
-                local = ""
-                organizacao = ""
-
-                if euro_idx is not None and euro_idx + 1 < len(rest):
-                    local = rest[euro_idx + 1]
-                    if euro_idx + 2 < len(rest):
-                        organizacao = " ".join(rest[euro_idx + 2:]).strip()
-                else:
-                    local = rest[-1]
-                    organizacao = ""
-
                 # determinar classe
                 class_end = euro_idx if euro_idx is not None else len(rest)
                 classe = ""
                 class_start = None
 
-                # caso "A definir"
                 for i in range(max(0, class_end - 3), class_end):
                     if i + 1 < class_end and rest[i].lower() == "a" and rest[i + 1].lower().startswith("definir"):
                         classe = "A definir"
@@ -335,6 +361,31 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 actividade = " ".join(actividade_tokens).strip()
                 categorias = " ".join(categorias_tokens).strip()
 
+                # LOCAL e ORGANIZAÇÃO por coordenadas (x)
+                local_col = ""
+                org_col = ""
+
+                if x_local is not None and x_org is not None:
+                    # palavras desta linha que caem em cada coluna
+                    # pequena margem para evitar apanhar coisas coladas ao limite
+                    margin = 2.0
+                    local_words = [w["text"] for w in lr["words"] if (w["x0"] >= x_local - margin) and (w["x0"] < x_org - margin)]
+                    org_words = [w["text"] for w in lr["words"] if (w["x0"] >= x_org - margin)]
+                    local_col = " ".join(local_words).strip()
+                    org_col = " ".join(org_words).strip()
+
+                    # limpar: por vezes vêm títulos/ruído
+                    # (não mexe muito, só remove duplicações óbvias)
+                    if local_col.upper() in ("LOCAL",):
+                        local_col = ""
+                    if org_col.upper().startswith("ORGAN"):
+                        org_col = ""
+                else:
+                    # fallback antigo (menos preciso) se não detectarmos cabeçalho na página
+                    if euro_idx is not None and euro_idx + 1 < len(rest):
+                        local_col = rest[euro_idx + 1]
+                        org_col = " ".join(rest[euro_idx + 2:]).strip() if euro_idx + 2 < len(rest) else ""
+
                 month_title = current_month.title()
                 month_num = MONTH_TO_NUM.get(month_title, None)
 
@@ -342,28 +393,28 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if month_num:
                     start_date, end_date = parse_day_range_to_dates(day_text, month_num, year)
 
-                rows.append({
+                rows_out.append({
                     "Mes": month_title,
                     "Dia": day_text,
                     "DIV": div,
                     "Actividade": actividade,
                     "Categorias": categorias,
                     "Classe": classe,
-                    "Local_raw": local,
-                    "Organizacao": organizacao,
+                    "Local_pdf": local_col,
+                    "Organizacao_pdf": org_col,
                     "Data_Inicio": start_date,
                     "Data_Fim": end_date,
                     "Data (mês + dia)": f"{month_title} {day_text}",
                 })
 
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows_out)
     if df.empty:
         return df
 
     df = df[df["DIV"].isin(["ABS", "JOV"])].copy()
     df.drop_duplicates(inplace=True)
 
-    # ordenar por data real (fallback para mês+texto se faltar data)
+    # ordenar por data real
     df["SortDate"] = df["Data_Inicio"].fillna(pd.Timestamp.max.date())
     df.sort_values(["SortDate", "DIV", "Actividade"], inplace=True)
     df.drop(columns=["SortDate"], inplace=True)
@@ -393,7 +444,6 @@ with st.spinner("A detectar o PDF mais recente e a extrair dados..."):
 last_key = "last_pdf_name"
 prev = st.session_state.get(last_key)
 st.session_state[last_key] = pdf_name
-
 if prev and prev != pdf_name:
     st.success(f"🟢 Nova versão detectada! Antes: {prev} | Agora: {pdf_name}")
 
@@ -405,7 +455,7 @@ if df.empty:
     st.stop()
 
 # ----------------------------
-# Filtros avançados
+# Filtros
 # ----------------------------
 st.subheader("Filtros")
 
@@ -432,7 +482,6 @@ search = st.text_input("Pesquisa (ex: Lisboa, FIP, S14, Madeira, nome do clube..
 
 filtered = df.copy()
 
-# filtros normais
 if mes_sel != "(Todos)":
     filtered = filtered[filtered["Mes"] == mes_sel]
 if div_sel != "(Todos)":
@@ -440,12 +489,10 @@ if div_sel != "(Todos)":
 if classe_sel:
     filtered = filtered[filtered["Classe"].isin(classe_sel)]
 
-# filtro rápido por datas (usa Data_Inicio/Data_Fim)
 today = dt.date.today()
 if quick != "(Nenhum)":
     if quick == "Este mês":
         start = dt.date(today.year, today.month, 1)
-        # ultimo dia do mês
         if today.month == 12:
             end = dt.date(today.year, 12, 31)
         else:
@@ -453,11 +500,10 @@ if quick != "(Nenhum)":
     elif quick == "Próximos 7 dias":
         start = today
         end = today + dt.timedelta(days=7)
-    else:  # Próximos 30 dias
+    else:
         start = today
         end = today + dt.timedelta(days=30)
 
-    # mantem eventos que cruzem o intervalo
     filtered = filtered[
         (filtered["Data_Inicio"].notna()) &
         (filtered["Data_Fim"].notna()) &
@@ -465,32 +511,35 @@ if quick != "(Nenhum)":
         (filtered["Data_Fim"] >= start)
     ]
 
-# pesquisa livre
 if search.strip():
     q = search.strip().lower()
-    cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local_raw", "Organizacao", "Mes"]
+    cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local_pdf", "Organizacao_pdf", "Mes"]
     mask = False
     for col in cols:
         mask = mask | filtered[col].astype(str).str.lower().str.contains(q, na=False)
     filtered = filtered[mask]
 
 # ----------------------------
-# Transformações finais (Local — Organização + Maps + Destaque)
+# Coluna Local = "LOCAL - ORGANIZAÇÃO" + Maps + Destaque
 # ----------------------------
-def format_local(row):
-    loc = normalize_text(row.get("Local_raw"))
-    org = normalize_text(row.get("Organizacao"))
-    if org and org.lower() != "nan":
-        return f"{loc} — {org}"
-    return loc
+def build_local_dash_org(row):
+    loc = normalize_text(row.get("Local_pdf"))
+    org = normalize_text(row.get("Organizacao_pdf"))
 
-filtered["Local"] = filtered.apply(format_local, axis=1)
+    if loc and org and org.lower() != "nan":
+        return f"{loc} - {org}"
+    if loc:
+        return loc
+    if org and org.lower() != "nan":
+        return org
+    return ""
+
+filtered["Local"] = filtered.apply(build_local_dash_org, axis=1)
 filtered["Destaque"] = filtered["Classe"].apply(class_badge)
 filtered["Mapa"] = filtered["Local"].apply(
     lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}"
 )
 
-# colunas pedidas (+ Destaque + Mapa)
 out = filtered[[
     "Data (mês + dia)",
     "DIV",
