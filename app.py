@@ -11,8 +11,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
-
-# 👇 NEW: points calculator sub-app
+# 👇 points calculator sub-app
 from points_calculator import render_points_calculator
 
 # -------------------------------------------------
@@ -20,11 +19,6 @@ from points_calculator import render_points_calculator
 # -------------------------------------------------
 st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
 
-
-# -------------------------------------------------
-# LINK EXTERNO (Ranking TieSports)
-# -------------------------------------------------
-st.sidebar.link_button("🏆 Abrir Rankings (TieSports)", "https://tour.tiesports.com/fpp/weekly_rankings")
 # Apple Sports UI (CSS)
 st.markdown("""
 <style>
@@ -522,10 +516,8 @@ def compute_metrics(df_view: pd.DataFrame):
     return total, next_date, len(this_month)
 
 # -------------------------------------------------
-# TOP-LEVEL NAV: Calendário vs Pontos
+# TOP-LEVEL NAV: Calendário vs Pontos + Botão Rankings
 # -------------------------------------------------
-# ---------- HEADER COM TABS + BOTÃO RANKINGS ----------
-
 col_tabs, col_btn = st.columns([5, 1])
 
 with col_tabs:
@@ -537,15 +529,6 @@ with col_btn:
         "https://tour.tiesports.com/fpp/weekly_rankings",
         use_container_width=True
     )
-
-# ---------- CONTEÚDO DAS TABS ----------
-
-with tab_cal:
-    render_calendar()
-
-with tab_pts:
-    render_points_calculator()
-
 
 # -------------------------------------------------
 # CALENDÁRIO TAB (tua app original)
@@ -598,7 +581,7 @@ with tab_cal:
     tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
 
     def render_view(div_value: str | None):
-        tab_key = (div_value or "ALL")  # <- IMPORTANT: stable key for widgets in each tab
+        tab_key = (div_value or "ALL")  # stable key for widgets in each tab
 
         base = df.copy()
         if div_value in ("ABS", "JOV"):
@@ -729,14 +712,13 @@ with tab_cal:
                 out,
                 use_container_width=True,
                 hide_index=True,
-                key=f"df_{tab_key}",  # <- unique per tab
+                key=f"df_{tab_key}",
                 column_config={
                     "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
                     "Destaque": st.column_config.TextColumn("Destaque"),
                 }
             )
 
-        # Download button MUST be inside render_view (so `out` exists) and MUST have unique key per tab
         st.download_button(
             "Download CSV (filtrado)",
             data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
@@ -759,4 +741,3 @@ with tab_cal:
 # -------------------------------------------------
 with tab_pts:
     render_points_calculator()
-
