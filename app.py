@@ -19,6 +19,16 @@ from points_calculator import render_points_calculator
 # -------------------------------------------------
 st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
 
+# ✅ LOGO (centrado e maior) — e sem imagem "vazia" extra
+logo_path = "armadura.png"
+if os.path.exists(logo_path):
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c2:
+        st.image(logo_path, width=220)  # 👈 aumenta/diminui aqui se quiseres
+else:
+    # se o ficheiro não existir no deploy, não mostra nada (evita quadrados brancos)
+    pass
+
 # Apple Sports UI (CSS)
 st.markdown("""
 <style>
@@ -112,44 +122,6 @@ div[data-baseweb="input"] > div { border-radius: 14px !important; }
   background: rgba(10,132,255,0.12);
   border-color: rgba(10,132,255,0.35);
 }
-
-/* Premium hero header (logo + glass) */
-.hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: 22px;
-  border: 1px solid rgba(17,17,17,0.08);
-  background: radial-gradient(1200px 600px at 20% 10%, rgba(10,132,255,0.18), transparent 60%),
-              radial-gradient(900px 500px at 80% 20%, rgba(90,200,250,0.16), transparent 55%),
-              rgba(255,255,255,0.74);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 18px 55px rgba(17,17,17,0.10);
-  padding: 16px 16px;
-  margin-bottom: 12px;
-}
-.hero-title { font-weight: 820; font-size: 1.45rem; margin: 0; }
-.hero-sub { color: rgba(17,17,17,0.62); font-size: 0.95rem; margin-top: 4px; }
-.hero-pills { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
-
-/* Logo container */
-.brandmark {
-  width: 88px;
-  height: 88px;
-  border-radius: 22px;
-  background: rgba(255,255,255,0.66);
-  border: 1px solid rgba(17,17,17,0.10);
-  box-shadow: 0 16px 45px rgba(17,17,17,0.12);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  overflow:hidden;
-}
-@media (max-width: 768px){
-  .brandmark { width: 72px; height: 72px; border-radius: 18px; }
-  .hero-title { font-size: 1.25rem; }
-}
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -569,12 +541,9 @@ with col_btn:
     )
 
 # -------------------------------------------------
-# CALENDÁRIO TAB (tua app original)
+# CALENDÁRIO TAB
 # -------------------------------------------------
 with tab_cal:
-    # -------------------------------------------------
-    # LOAD DATA
-    # -------------------------------------------------
     left, right = st.columns([1, 1])
     with right:
         if st.button("⟲ Actualizar", help="Ignora cache e volta a detectar o PDF mais recente"):
@@ -592,30 +561,16 @@ with tab_cal:
     st.session_state["last_pdf_name"] = pdf_name
     new_badge = " • 🟢 nova versão" if (prev and prev != pdf_name) else ""
 
-    # --- Premium header (hero) ---
-    logo_path = "armadura.png"
-    c_logo, c_head = st.columns([1, 7], vertical_alignment="center")
-
-    with c_logo:
-        st.markdown('<div class="brandmark">', unsafe_allow_html=True)
-        try:
-            st.image(logo_path, width=76)
-        except Exception:
-            pass
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with c_head:
-        st.markdown(f"""
-        <div class="hero">
-          <div class="hero-title">Calendário FPPadel</div>
-          <div class="hero-sub">ABS e JOV \u2022 actualizado automaticamente \u2022 Maps{new_badge}</div>
-          <div class="hero-pills">
-            <span class="pill">PDF: {pdf_name}</span>
-            <span class="pill">Ano: {year}</span>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
+    st.markdown(f"""
+    <div class="topbar">
+      <div class="top-title">Calendário FPPadel</div>
+      <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
+      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <span class="pill">PDF: {pdf_name}</span>
+        <span class="pill">Ano: {year}</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.link_button("Abrir PDF original", pdf_url)
 
@@ -627,13 +582,10 @@ with tab_cal:
     df["Destaque"] = df["Classe"].apply(class_badge)
     df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
-    # -------------------------------------------------
-    # TABS (ABS/JOV/ALL)
-    # -------------------------------------------------
     tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
 
     def render_view(div_value: str | None):
-        tab_key = (div_value or "ALL")  # stable key for widgets in each tab
+        tab_key = (div_value or "ALL")
 
         base = df.copy()
         if div_value in ("ABS", "JOV"):
@@ -690,7 +642,8 @@ with tab_cal:
 
         if search.strip():
             q = search.strip().lower()
-            cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local", "Mes"]
+            # ✅ removi "Actividade" daqui também
+            cols = ["Data (mês + dia)", "DIV", "Categorias", "Classe", "Local", "Mes"]
             mask = False
             for col in cols:
                 mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
@@ -727,10 +680,10 @@ with tab_cal:
 
         st.markdown("### Actividades")
 
+        # ✅ remove "Actividade" do output
         out = view[[
             "Data (mês + dia)",
             "DIV",
-            "Actividade",
             "Categorias",
             "Classe",
             "Local",
@@ -738,9 +691,11 @@ with tab_cal:
             "Mapa",
         ]].copy()
 
-        # Output
         if is_mobile:
             for _, row in out.iterrows():
+                # ✅ título do card agora usa Categoria/Classe/Local (já não Actividade)
+                title = row.get("Categorias") or row.get("Classe") or row.get("Local") or "Evento"
+
                 badge_div = row["DIV"]
                 badge_rank = normalize_text(row["Destaque"])
                 pills = f'<span class="pill">{badge_div}</span>'
@@ -749,9 +704,8 @@ with tab_cal:
 
                 st.markdown(f"""
                 <div class="card">
-                  <div class="title">{row['Actividade']}</div>
+                  <div class="title">{title}</div>
                   <div class="row">{row['Data (mês + dia)']} &nbsp; {pills}</div>
-                  <div class="row"><b>Categorias:</b> {row['Categorias']}</div>
                   <div class="row"><b>Classe:</b> {row['Classe']}</div>
                   <div class="row"><b>Local:</b> {row['Local']}</div>
                   <div class="actions">
