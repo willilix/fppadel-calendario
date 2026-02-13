@@ -98,9 +98,7 @@ div[data-baseweb="input"] > div { border-radius: 14px !important; }
 }
 
 /* Tabs spacing */
-.stTabs [data-baseweb="tab-list"] {
-  gap: 8px;
-}
+.stTabs [data-baseweb="tab-list"] { gap: 8px; }
 .stTabs [data-baseweb="tab"] {
   border-radius: 999px;
   border: 1px solid rgba(17,17,17,0.10);
@@ -121,8 +119,8 @@ HOME_URL = "https://fppadel.pt/"
 WP_MEDIA_SEARCH = "https://fppadel.pt/wp-json/wp/v2/media"
 
 MONTHS = [
-    "JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
-    "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"
+    "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
+    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
 ]
 MONTH_TO_NUM = {m.title(): i for i, m in enumerate(MONTHS, start=1)}
 
@@ -156,7 +154,6 @@ def month_sort_key(m: str) -> int:
         return 999
 
 def _pick_highest_version(urls: list[str]) -> str:
-    """Pick the highest '-<n>.pdf' suffix if present; otherwise fallback to alpha."""
     def score(u: str) -> int:
         m = re.search(r"-(\d+)\.pdf$", u)
         return int(m.group(1)) if m else -1
@@ -184,7 +181,7 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
 
     end_month = month_num
     end_year = year
-    if end_day < start_day:  # crosses month
+    if end_day < start_day:
         if month_num == 12:
             end_month = 1
             end_year = year + 1
@@ -218,7 +215,6 @@ def class_badge(classe: str) -> str:
 # -------------------------------------------------
 @st.cache_data(ttl=900)
 def find_latest_calendar_pdf_url() -> str:
-    # 1) Home scrape (prefer “saber mais”)
     try:
         html = requests.get(HOME_URL, timeout=20).text
         soup = BeautifulSoup(html, "html.parser")
@@ -230,7 +226,6 @@ def find_latest_calendar_pdf_url() -> str:
             if "saber mais" in text and href.lower().endswith(".pdf") and "calend" in href.lower():
                 candidates.append(urljoin(HOME_URL, href))
 
-        # fallback: any calendar pdf
         if not candidates:
             for a in soup.find_all("a", href=True):
                 href = a["href"].strip()
@@ -242,7 +237,6 @@ def find_latest_calendar_pdf_url() -> str:
     except Exception:
         pass
 
-    # 2) WordPress media search fallback
     found = []
     for term in ["CALENDARIO-ACTIVIDADES-PROVISORIO", "RG-01-CALENDARIO-ACTIVIDADES", "CALENDARIO-ACTIVIDADES"]:
         try:
@@ -304,7 +298,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 
             line_rows = group_words_into_rows(words, y_tol=3)
 
-            # detect column x for LOCAL and ORGANIZAÇÃO from header on this page
             x_local = None
             x_org = None
             for lr in line_rows:
@@ -329,7 +322,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if up.startswith("CALEND"):
                     continue
 
-                # month detection
                 month_found = None
                 for m in MONTHS:
                     if up == m:
@@ -348,7 +340,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
 
                 tokens = line_text.split()
 
-                # DIV
                 div_idx = None
                 for i, t in enumerate(tokens):
                     if t in ("ABS", "JOV"):
@@ -358,7 +349,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     continue
                 div = tokens[div_idx]
 
-                # day text (before tipo)
                 pre = tokens[:div_idx]
                 tipo_set = {"CIR", "FPP", "FOR", "INT"}
                 if len(pre) >= 2 and pre[-2] in tipo_set:
@@ -378,12 +368,10 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                         euro_idx = i
                         break
 
-                # class
                 class_end = euro_idx if euro_idx is not None else len(rest)
                 classe = ""
                 class_start = None
 
-                # "A definir"
                 for i in range(max(0, class_end - 3), class_end):
                     if i + 1 < class_end and rest[i].lower() == "a" and rest[i + 1].lower().startswith("definir"):
                         classe = "A definir"
@@ -405,7 +393,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if class_start is None:
                     class_start = class_end
 
-                # categories
                 cat_start = None
                 for i, t in enumerate(rest):
                     if i >= class_start:
@@ -430,7 +417,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 actividade = " ".join(actividade_tokens).strip()
                 categorias = " ".join(categorias_tokens).strip()
 
-                # LOCAL & ORGANIZAÇÃO from x columns
                 local_col = ""
                 org_col = ""
                 if x_local is not None and x_org is not None:
@@ -451,7 +437,6 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     if org_col.upper().startswith("ORGAN"):
                         org_col = ""
                 else:
-                    # fallback (rare)
                     if euro_idx is not None and euro_idx + 1 < len(rest):
                         local_col = rest[euro_idx + 1]
                         org_col = " ".join(rest[euro_idx + 2:]).strip() if euro_idx + 2 < len(rest) else ""
@@ -489,7 +474,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     return df
 
 # -------------------------------------------------
-# BUILD DISPLAY FIELDS
+# BUILD DISPLAY FIELDS + METRICS
 # -------------------------------------------------
 def build_local_dash_org(row):
     loc = normalize_text(row.get("Local_pdf"))
@@ -504,16 +489,15 @@ def build_local_dash_org(row):
 
 def compute_metrics(df_view: pd.DataFrame):
     total = len(df_view)
-
     today = dt.date.today()
+
     next_date = None
-    if "Data_Inicio" in df_view.columns and not df_view.empty:
+    if not df_view.empty and "Data_Inicio" in df_view.columns:
         future = df_view[df_view["Data_Inicio"].notna() & (df_view["Data_Inicio"] >= today)].copy()
         if not future.empty:
             future = future.sort_values(["Data_Inicio", "DIV", "Actividade"])
             next_date = future.iloc[0]["Data_Inicio"]
 
-    # this month count (by overlap)
     start_month = dt.date(today.year, today.month, 1)
     if today.month == 12:
         end_month = dt.date(today.year, 12, 31)
@@ -529,7 +513,7 @@ def compute_metrics(df_view: pd.DataFrame):
     return total, next_date, len(this_month)
 
 # -------------------------------------------------
-# UI TOP BAR
+# LOAD DATA
 # -------------------------------------------------
 left, right = st.columns([1, 1])
 with right:
@@ -565,46 +549,46 @@ if df.empty:
     st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
     st.stop()
 
-# Display fields
 df["Local"] = df.apply(build_local_dash_org, axis=1)
 df["Destaque"] = df["Classe"].apply(class_badge)
 df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
 # -------------------------------------------------
-# TABS (ABS / JOV / Ambos)
+# TABS
 # -------------------------------------------------
 tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
 
 def render_view(div_value: str | None):
+    tab_key = (div_value or "ALL")  # <- IMPORTANT: stable key for widgets in each tab
+
     base = df.copy()
     if div_value in ("ABS", "JOV"):
         base = base[base["DIV"] == div_value].copy()
 
-    # Filters (mobile: expander; desktop: row)
+    # Filters
     if is_mobile:
         with st.expander("Filtros", expanded=False):
             mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{div_value}")
+            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
             classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{div_value}")
-            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{div_value}")
-            search = st.text_input("Pesquisa", key=f"search_{div_value}")
+            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+            search = st.text_input("Pesquisa", key=f"search_{tab_key}")
     else:
         c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
         with c1:
             mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{div_value}")
+            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
         with c2:
             classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{div_value}")
+            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
         with c3:
-            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{div_value}")
+            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
         with c4:
-            search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{div_value}")
+            search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
 
     view = base.copy()
 
-    # Apply filters
     if mes_sel != "(Todos)":
         view = view[view["Mes"] == mes_sel]
 
@@ -638,7 +622,7 @@ def render_view(div_value: str | None):
             mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
         view = view[mask]
 
-    # Metrics (Apple style)
+    # Metrics
     total, next_date, this_month_count = compute_metrics(view)
     m1, m2, m3 = st.columns(3)
     with m1:
@@ -680,7 +664,7 @@ def render_view(div_value: str | None):
         "Mapa",
     ]].copy()
 
-    # Output: wallet cards on mobile, clean table on desktop
+    # Output
     if is_mobile:
         for _, row in out.iterrows():
             badge_div = row["DIV"]
@@ -703,27 +687,24 @@ def render_view(div_value: str | None):
             """, unsafe_allow_html=True)
     else:
         st.dataframe(
-    out,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
-        "Destaque": st.column_config.TextColumn("Destaque"),
-    },
-    key=f"df_{tab_key}"
-)
+            out,
+            use_container_width=True,
+            hide_index=True,
+            key=f"df_{tab_key}",  # <- unique per tab
+            column_config={
+                "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
+                "Destaque": st.column_config.TextColumn("Destaque"),
+            }
+        )
 
-
-    tab_key = (div_value or "ALL")
-
-st.download_button(
-    "Download CSV (filtrado)",
-    data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
-    file_name=f"calendario_fppadel_{tab_key.lower()}_{pdf_name.replace('.pdf','')}.csv",
-    mime="text/csv",
-    key=f"dl_{tab_key}"
-)
-
+    # Download button MUST be inside render_view (so `out` exists) and MUST have unique key per tab
+    st.download_button(
+        "Download CSV (filtrado)",
+        data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
+        file_name=f"calendario_fppadel_{tab_key.lower()}_{pdf_name.replace('.pdf','')}.csv",
+        mime="text/csv",
+        key=f"dl_{tab_key}"
+    )
 
 with tab_abs:
     render_view("ABS")
