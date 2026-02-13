@@ -108,6 +108,107 @@ def search_player(query: str):
 
     return rows[0]
 
+def _find_input_by_label(soup: BeautifulSoup, label_text: str) -> str | None:
+    """
+    Encontra o NAME do <input> associado a um <label> que contenha label_text.
+    Funciona com:
+      <label for="...">Nome/Licença</label>  <input id="..." name="...">
+    e também com layouts em que o input vem logo a seguir.
+    """
+    # 1) tentar label[for]
+    for lab in soup.find_all("label"):
+        if label_text.lower() in lab.get_text(" ", strip=True).lower():
+            for_attr = lab.get("for")
+            if for_attr:
+                inp = soup.find(id=for_attr)
+                if inp and inp.get("name"):
+                    return inp.get("name")
+
+            # 2) fallback: procurar o primeiro input a seguir ao label
+            nxt = lab.find_next("input")
+            if nxt and nxt.get("name"):
+                return nxt.get("name")
+
+    return None
+
+
+def _find_filter_button_name(soup: BeautifulSoup) -> str | None:
+    """
+    Descobre o NAME do botão FILTRAR (input submit ou button).
+    Precisamos enviar este campo no POST para o servidor aplicar o filtro.
+    """
+    # input type=submit com value "FILTRAR"
+    inp = soup.find("input", {"type": re.compile("submit", re.I), "value": re.compile(r"filtrar", re.I)})
+    if inp and inp.get("name"):
+        return inp.get("name")
+
+    # button com texto "FILTRAR"
+    for btn in soup.find_all("button"):
+        if "filtrar" in btn.get_text(" ", strip=True).lower():
+            if btn.get("name"):
+                return btn.get("name")
+            # às vezes button não tem name; nesse caso pode ser postback via __EVENTTARGET,
+            # mas muitas páginas ainda aceitam só o submit input.
+            break
+
+    return None
+
+
+@st.cache_data(ttl=300)
+def search_player(query: str) -> dict | None:
+    s = requests.Session()
+
+    # 1) GET inicial (para VIEWSTATE, EVENTVALIDATION, etc.)
+    r = s.get(BASE_URL, headers=HEADERS, timeout=25)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+
+    payload = _collect_form_fields(soup)
+
+    # 2) Encontrar o campo exacto "Nome/Licença"
+    name_field = _find_input_by_label(soup, "Nome/Licença")
+    if not name_field:
+        # fallback: algumas traduções podem ter só "Nome"
+        name_field = _find_input_by_label(soup, "Nome")
+
+    if not name_field:
+        # debug: ajuda-te a perceber o que existe no form
+        st.error("Não consegui localizar o campo 'Nome/Licença' no HTML. O site pode ter mudado.")
+        with st.expander("Debug (nomes de inputs no form)"):
+            st.write(sorted(list(payload.keys()))[:200])
+        return None
+
+    payload[name_field] = query.strip()
+
+    # 3) Simular clique no botão FILTRAR
+    filtrar_name = _find_filter_button_name(soup)
+    if filtrar_name:
+        payload[filtrar_name] = "FILTRAR"
+    else:
+        # fallback: às vezes o botão é um input sem name mas com id
+        # e a app aceita só o payload com o campo preenchido; tentamos na mesma.
+        pass
+
+    # 4) POST
+    r2 = s.post(BASE_URL, headers=HEADERS, data=payload, timeout=25)
+    r2.raise_for_status()
+
+    rows = _extract_rows(r2.text)
+
+    if not rows:
+        # debug: mostra um excerto do html para veres se ele devolveu outra coisa
+        with st.expander("Debug: sem linhas extraídas (primeiros 800 chars)"):
+            st.code(r2.text[:800])
+        return None
+
+    # 5) Escolher o melhor match
+    qlow = query.strip().lower()
+    for row in rows:
+        if qlow in (row["jogador"] or "").lower() or query.strip() == (row["licenca"] or "").strip():
+            return row
+
+    return rows[0]
+
 
 def render_ranking():
     st.markdown("## 🏆 Ranking semanal (TieSports/FPP)")
