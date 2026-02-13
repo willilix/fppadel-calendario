@@ -5,3 +5,4 @@ beautifulsoup4
 unidecode
 pdfplumber
 pdfminer.six
+pillow
