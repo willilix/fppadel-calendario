@@ -11,6 +11,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
+# 👇 NEW: points calculator sub-app
+from points_calculator import render_points_calculator
+
 # -------------------------------------------------
 # CONFIG
 # -------------------------------------------------
@@ -513,204 +516,219 @@ def compute_metrics(df_view: pd.DataFrame):
     return total, next_date, len(this_month)
 
 # -------------------------------------------------
-# LOAD DATA
+# TOP-LEVEL NAV: Calendário vs Pontos
 # -------------------------------------------------
-left, right = st.columns([1, 1])
-with right:
-    if st.button("⟲ Actualizar", help="Ignora cache e volta a detectar o PDF mais recente"):
-        st.cache_data.clear()
-        st.rerun()
-
-with st.spinner("A detectar o PDF mais recente e a extrair dados…"):
-    pdf_url = find_latest_calendar_pdf_url()
-    pdf_name = os.path.basename(urlparse(pdf_url).path)
-    year = infer_year_from_pdf_url(pdf_url)
-    pdf_bytes = download_pdf_bytes(pdf_url)
-    df = parse_calendar_pdf(pdf_bytes, year=year)
-
-prev = st.session_state.get("last_pdf_name")
-st.session_state["last_pdf_name"] = pdf_name
-new_badge = " • 🟢 nova versão" if (prev and prev != pdf_name) else ""
-
-st.markdown(f"""
-<div class="topbar">
-  <div class="top-title">Calendário FPPadel</div>
-  <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
-  <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
-    <span class="pill">PDF: {pdf_name}</span>
-    <span class="pill">Ano: {year}</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.link_button("Abrir PDF original", pdf_url)
-
-if df.empty:
-    st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
-    st.stop()
-
-df["Local"] = df.apply(build_local_dash_org, axis=1)
-df["Destaque"] = df["Classe"].apply(class_badge)
-df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
+tab_cal, tab_pts = st.tabs(["📅 Calendário", "🧮 Pontos"])
 
 # -------------------------------------------------
-# TABS
+# CALENDÁRIO TAB (tua app original)
 # -------------------------------------------------
-tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
+with tab_cal:
+    # -------------------------------------------------
+    # LOAD DATA
+    # -------------------------------------------------
+    left, right = st.columns([1, 1])
+    with right:
+        if st.button("⟲ Actualizar", help="Ignora cache e volta a detectar o PDF mais recente"):
+            st.cache_data.clear()
+            st.rerun()
 
-def render_view(div_value: str | None):
-    tab_key = (div_value or "ALL")  # <- IMPORTANT: stable key for widgets in each tab
+    with st.spinner("A detectar o PDF mais recente e a extrair dados…"):
+        pdf_url = find_latest_calendar_pdf_url()
+        pdf_name = os.path.basename(urlparse(pdf_url).path)
+        year = infer_year_from_pdf_url(pdf_url)
+        pdf_bytes = download_pdf_bytes(pdf_url)
+        df = parse_calendar_pdf(pdf_bytes, year=year)
 
-    base = df.copy()
-    if div_value in ("ABS", "JOV"):
-        base = base[base["DIV"] == div_value].copy()
+    prev = st.session_state.get("last_pdf_name")
+    st.session_state["last_pdf_name"] = pdf_name
+    new_badge = " • 🟢 nova versão" if (prev and prev != pdf_name) else ""
 
-    # Filters
-    if is_mobile:
-        with st.expander("Filtros", expanded=False):
-            mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
-            classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
-            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
-            search = st.text_input("Pesquisa", key=f"search_{tab_key}")
-    else:
-        c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-        with c1:
-            mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-            mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
-        with c2:
-            classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-            classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
-        with c3:
-            quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
-        with c4:
-            search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
+    st.markdown(f"""
+    <div class="topbar">
+      <div class="top-title">Calendário FPPadel</div>
+      <div class="top-sub">ABS e JOV • actualizado automaticamente • Maps{new_badge}</div>
+      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <span class="pill">PDF: {pdf_name}</span>
+        <span class="pill">Ano: {year}</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    view = base.copy()
+    st.link_button("Abrir PDF original", pdf_url)
 
-    if mes_sel != "(Todos)":
-        view = view[view["Mes"] == mes_sel]
+    if df.empty:
+        st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
+        st.stop()
 
-    if classe_sel:
-        view = view[view["Classe"].isin(classe_sel)]
+    df["Local"] = df.apply(build_local_dash_org, axis=1)
+    df["Destaque"] = df["Classe"].apply(class_badge)
+    df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
-    today = dt.date.today()
-    if quick != "(Nenhum)":
-        if quick == "Este mês":
-            start = dt.date(today.year, today.month, 1)
-            end = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
-        elif quick == "Próximos 7 dias":
-            start = today
-            end = today + dt.timedelta(days=7)
+    # -------------------------------------------------
+    # TABS (ABS/JOV/ALL)
+    # -------------------------------------------------
+    tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
+
+    def render_view(div_value: str | None):
+        tab_key = (div_value or "ALL")  # <- IMPORTANT: stable key for widgets in each tab
+
+        base = df.copy()
+        if div_value in ("ABS", "JOV"):
+            base = base[base["DIV"] == div_value].copy()
+
+        # Filters
+        if is_mobile:
+            with st.expander("Filtros", expanded=False):
+                mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+                mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
+                classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+                classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+                quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+                search = st.text_input("Pesquisa", key=f"search_{tab_key}")
         else:
-            start = today
-            end = today + dt.timedelta(days=30)
+            c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+            with c1:
+                mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+                mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
+            with c2:
+                classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+                classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+            with c3:
+                quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+            with c4:
+                search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
 
-        view = view[
-            (view["Data_Inicio"].notna()) &
-            (view["Data_Fim"].notna()) &
-            (view["Data_Inicio"] <= end) &
-            (view["Data_Fim"] >= start)
-        ]
+        view = base.copy()
 
-    if search.strip():
-        q = search.strip().lower()
-        cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local", "Mes"]
-        mask = False
-        for col in cols:
-            mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
-        view = view[mask]
+        if mes_sel != "(Todos)":
+            view = view[view["Mes"] == mes_sel]
 
-    # Metrics
-    total, next_date, this_month_count = compute_metrics(view)
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.markdown(f"""
-        <div class="metric">
-          <div class="label">Eventos</div>
-          <div class="value">{total}</div>
-          <div class="hint">na selecção actual</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m2:
-        nxt = next_date.strftime("%d/%m") if next_date else "—"
-        st.markdown(f"""
-        <div class="metric">
-          <div class="label">Próximo</div>
-          <div class="value">{nxt}</div>
-          <div class="hint">data de início</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with m3:
-        st.markdown(f"""
-        <div class="metric">
-          <div class="label">Este mês</div>
-          <div class="value">{this_month_count}</div>
-          <div class="hint">eventos a decorrer</div>
-        </div>
-        """, unsafe_allow_html=True)
+        if classe_sel:
+            view = view[view["Classe"].isin(classe_sel)]
 
-    st.markdown("### Actividades")
+        today = dt.date.today()
+        if quick != "(Nenhum)":
+            if quick == "Este mês":
+                start = dt.date(today.year, today.month, 1)
+                end = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
+            elif quick == "Próximos 7 dias":
+                start = today
+                end = today + dt.timedelta(days=7)
+            else:
+                start = today
+                end = today + dt.timedelta(days=30)
 
-    out = view[[
-        "Data (mês + dia)",
-        "DIV",
-        "Actividade",
-        "Categorias",
-        "Classe",
-        "Local",
-        "Destaque",
-        "Mapa",
-    ]].copy()
+            view = view[
+                (view["Data_Inicio"].notna()) &
+                (view["Data_Fim"].notna()) &
+                (view["Data_Inicio"] <= end) &
+                (view["Data_Fim"] >= start)
+            ]
 
-    # Output
-    if is_mobile:
-        for _, row in out.iterrows():
-            badge_div = row["DIV"]
-            badge_rank = normalize_text(row["Destaque"])
-            pills = f'<span class="pill">{badge_div}</span>'
-            if badge_rank:
-                pills += f' <span class="pill">{badge_rank}</span>'
+        if search.strip():
+            q = search.strip().lower()
+            cols = ["Data (mês + dia)", "DIV", "Actividade", "Categorias", "Classe", "Local", "Mes"]
+            mask = False
+            for col in cols:
+                mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
+            view = view[mask]
 
+        # Metrics
+        total, next_date, this_month_count = compute_metrics(view)
+        m1, m2, m3 = st.columns(3)
+        with m1:
             st.markdown(f"""
-            <div class="card">
-              <div class="title">{row['Actividade']}</div>
-              <div class="row">{row['Data (mês + dia)']} &nbsp; {pills}</div>
-              <div class="row"><b>Categorias:</b> {row['Categorias']}</div>
-              <div class="row"><b>Classe:</b> {row['Classe']}</div>
-              <div class="row"><b>Local:</b> {row['Local']}</div>
-              <div class="actions">
-                <a href="{row['Mapa']}" target="_blank">Abrir no Maps →</a>
-              </div>
+            <div class="metric">
+              <div class="label">Eventos</div>
+              <div class="value">{total}</div>
+              <div class="hint">na selecção actual</div>
             </div>
             """, unsafe_allow_html=True)
-    else:
-        st.dataframe(
-            out,
-            use_container_width=True,
-            hide_index=True,
-            key=f"df_{tab_key}",  # <- unique per tab
-            column_config={
-                "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
-                "Destaque": st.column_config.TextColumn("Destaque"),
-            }
+        with m2:
+            nxt = next_date.strftime("%d/%m") if next_date else "—"
+            st.markdown(f"""
+            <div class="metric">
+              <div class="label">Próximo</div>
+              <div class="value">{nxt}</div>
+              <div class="hint">data de início</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with m3:
+            st.markdown(f"""
+            <div class="metric">
+              <div class="label">Este mês</div>
+              <div class="value">{this_month_count}</div>
+              <div class="hint">eventos a decorrer</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("### Actividades")
+
+        out = view[[
+            "Data (mês + dia)",
+            "DIV",
+            "Actividade",
+            "Categorias",
+            "Classe",
+            "Local",
+            "Destaque",
+            "Mapa",
+        ]].copy()
+
+        # Output
+        if is_mobile:
+            for _, row in out.iterrows():
+                badge_div = row["DIV"]
+                badge_rank = normalize_text(row["Destaque"])
+                pills = f'<span class="pill">{badge_div}</span>'
+                if badge_rank:
+                    pills += f' <span class="pill">{badge_rank}</span>'
+
+                st.markdown(f"""
+                <div class="card">
+                  <div class="title">{row['Actividade']}</div>
+                  <div class="row">{row['Data (mês + dia)']} &nbsp; {pills}</div>
+                  <div class="row"><b>Categorias:</b> {row['Categorias']}</div>
+                  <div class="row"><b>Classe:</b> {row['Classe']}</div>
+                  <div class="row"><b>Local:</b> {row['Local']}</div>
+                  <div class="actions">
+                    <a href="{row['Mapa']}" target="_blank">Abrir no Maps →</a>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.dataframe(
+                out,
+                use_container_width=True,
+                hide_index=True,
+                key=f"df_{tab_key}",  # <- unique per tab
+                column_config={
+                    "Mapa": st.column_config.LinkColumn("Mapa", display_text="Maps"),
+                    "Destaque": st.column_config.TextColumn("Destaque"),
+                }
+            )
+
+        # Download button MUST be inside render_view (so `out` exists) and MUST have unique key per tab
+        st.download_button(
+            "Download CSV (filtrado)",
+            data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
+            file_name=f"calendario_fppadel_{tab_key.lower()}_{pdf_name.replace('.pdf','')}.csv",
+            mime="text/csv",
+            key=f"dl_{tab_key}"
         )
 
-    # Download button MUST be inside render_view (so `out` exists) and MUST have unique key per tab
-    st.download_button(
-        "Download CSV (filtrado)",
-        data=out.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
-        file_name=f"calendario_fppadel_{tab_key.lower()}_{pdf_name.replace('.pdf','')}.csv",
-        mime="text/csv",
-        key=f"dl_{tab_key}"
-    )
+    with tab_abs:
+        render_view("ABS")
 
-with tab_abs:
-    render_view("ABS")
+    with tab_jov:
+        render_view("JOV")
 
-with tab_jov:
-    render_view("JOV")
+    with tab_all:
+        render_view(None)
 
-with tab_all:
-    render_view(None)
+# -------------------------------------------------
+# PONTOS TAB (sub-app)
+# -------------------------------------------------
+with tab_pts:
+    render_points_calculator()
