@@ -3,10 +3,10 @@ from tiesports_scraper import search_weekly_ranking
 
 def render_ranking():
     st.markdown("## 🏆 Ranking semanal (TieSports/FPP)")
-    st.caption("Pesquisa por nome ou nº de licença (entra automaticamente via 'Ver mais').")
+    st.caption("Pesquisa por nome ou nº de licença (simula 'Ver mais' automaticamente).")
 
-    gender = st.selectbox("Bloco", ["Masculinos", "Femininos", "Mistos"], index=0)
-    query = st.text_input("Nome ou nº licença", placeholder="Ex: 17017")
+    gender = st.selectbox("Bloco", ["Masculinos"], index=0)  # por agora só Masculinos (já temos o EVENTTARGET)
+    query = st.text_input("Nome ou nº licença", placeholder="Ex: 17017 ou Lucas Francisco")
 
     if st.button("🔎 Procurar", use_container_width=True, disabled=not query.strip()):
         with st.spinner("A consultar ranking…"):
@@ -14,6 +14,8 @@ def render_ranking():
 
         if not res.get("found"):
             st.warning(res.get("error", "Não encontrei."))
+            if res.get("debug_url"):
+                st.caption(f"Debug URL: {res['debug_url']}")
             return
 
         d = res["data"]
