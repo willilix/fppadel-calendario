@@ -1,7 +1,7 @@
 import os
 import re
 from io import BytesIO
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, quote_plus
 
 import pandas as pd
 import pdfplumber
@@ -81,7 +81,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     """
     Parser robusto para PDFs onde as "colunas" vêm separadas por 1 espaço (não por múltiplos).
-    Extrai apenas: Data (mês+dia), DIV (ABS/JOV), Actividade, Categorias, Classe, Local.
+    Extrai: Data (mês+dia), DIV (ABS/JOV), Actividade, Categorias, Classe, Local, Organização.
     """
 
     def looks_like_money(tok: str) -> bool:
@@ -89,7 +89,7 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
         return bool(re.fullmatch(r"[´']?\d{1,3}(?:\.\d{3})*(?:,\d+)?", tok))
 
     def is_category_token(tok: str) -> bool:
-        # Tokens típicos de categoria: F1, M3, S14, VET, etc.
+        # Tokens típicos de categoria: F1, M3, S14, etc.
         return bool(re.fullmatch(r"(F|M|S)\d{1,2}", tok)) or tok in {"VET", "FIP"}
 
     rows = []
@@ -111,7 +111,7 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                 if upper.startswith("CALEND"):
                     continue
 
-                # detectar mês (o PDF vem muitas vezes como "FEVEREIRO 4 a 8 CIR ABS ...")
+                # detectar mês (muitas vezes vem como "FEVEREIRO 4 a 8 CIR ABS ...")
                 month_found = None
                 for m in MONTHS:
                     if upper.startswith(m + " "):
@@ -140,11 +140,10 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
 
                 div = tokens[div_idx]
 
-                # antes do DIV tens "data + tipo". Guardamos data como "tudo menos o(s) último(s) token(s)".
+                # antes do DIV: data + tipo (tipo pode ser 1-2 tokens)
                 pre = tokens[:div_idx]
                 tipo_set = {"CIR", "FPP", "FOR", "INT"}
 
-                # tipo pode ser 1 ou 2 tokens (ex: "FOR TR")
                 if len(pre) >= 2 and pre[-2] in tipo_set:
                     date = " ".join(pre[:-2]).strip()
                 elif len(pre) >= 1 and pre[-1] in tipo_set:
@@ -156,7 +155,8 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                 if not rest:
                     continue
 
-                # localizar token com € (prize-money). O local costuma vir logo a seguir.
+                # localizar token com € (prize-money). No PDF, normalmente:
+                # ... CLASSE  PRIZE€  LOCAL  ORGANIZAÇÃO...
                 euro_idx = None
                 for i, t in enumerate(rest):
                     if "€" in t:
@@ -164,15 +164,18 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                         break
 
                 local = ""
+                organizacao = ""
+
                 if euro_idx is not None and euro_idx + 1 < len(rest):
                     local = rest[euro_idx + 1]
+                    if euro_idx + 2 < len(rest):
+                        organizacao = " ".join(rest[euro_idx + 2:]).strip()
                 else:
-                    # fallback: último token
+                    # fallback se não apanharmos o € (raro)
                     local = rest[-1]
+                    organizacao = ""
 
-                # determinar classe:
-                # - se existir "A definir", usa isso
-                # - senão, procurar números (2.000 / 10.000 / 50.000) e/ou " / Bronze/Silver/Gold"
+                # determinar classe
                 class_end = euro_idx if euro_idx is not None else len(rest)
                 classe = ""
                 class_start = None
@@ -185,26 +188,21 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                         break
 
                 if not classe:
-                    # procurar o último valor monetário antes do €
                     for i in range(class_end - 1, -1, -1):
                         if looks_like_money(rest[i]):
                             class_start = i
-                            # se logo a seguir houver "/ Bronze/Silver/Gold/Continental", incluir
                             if i + 2 < class_end and rest[i + 1] == "/" and rest[i + 2][0].isalpha():
                                 classe = " ".join(rest[i:i + 3])
                             elif i + 1 < class_end and "/" in rest[i + 1]:
-                                # às vezes vem colado "10.000/Bronze" (raro)
                                 classe = " ".join(rest[i:i + 2])
                             else:
                                 classe = rest[i]
                             break
 
                 if class_start is None:
-                    # se não detectou classe, assume que não existe e põe class_start no fim
                     class_start = class_end
 
-                # categorias:
-                # encontrar início das categorias (primeiro token tipo F1/M1/S12 ou "M & F")
+                # categorias
                 cat_start = None
                 for i, t in enumerate(rest):
                     if i >= class_start:
@@ -212,13 +210,10 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                     if is_category_token(t):
                         cat_start = i
                         break
-                    # padrão "M & F"
                     if t == "M" and i + 2 < len(rest) and rest[i + 1] == "&" and rest[i + 2] == "F":
                         cat_start = i
                         break
 
-                # actividade:
-                # tudo antes de cat_start (limpando um "FPP" isolado que aparece em alguns FIP)
                 if cat_start is None:
                     actividade_tokens = rest[:class_start]
                     categorias_tokens = []
@@ -226,7 +221,7 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                     actividade_tokens = rest[:cat_start]
                     categorias_tokens = rest[cat_start:class_start]
 
-                # remover "FPP" isolado no fim da actividade (coluna parceria às vezes cola ali)
+                # remover "FPP" isolado no fim da actividade (aparece em alguns casos)
                 if actividade_tokens and actividade_tokens[-1] == "FPP":
                     actividade_tokens = actividade_tokens[:-1]
 
@@ -240,7 +235,8 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                     "Actividade": actividade,
                     "Categorias": categorias,
                     "Classe": classe,
-                    "Local": local,
+                    "Local_raw": local,
+                    "Organizacao": organizacao,
                     "Data (mês + dia)": f"{current_month.title()} {date}",
                 })
 
@@ -259,16 +255,9 @@ def parse_calendar_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     return df
 
 
-    df = df[df["DIV"].isin(["ABS", "JOV"])].copy()
-    df.drop_duplicates(inplace=True)
-
-    month_order = {m.title(): i for i, m in enumerate(MONTHS, start=1)}
-    df["Mes_ord"] = df["Mes"].map(month_order).fillna(99).astype(int)
-    df.sort_values(["Mes_ord", "Dia", "DIV", "Actividade"], inplace=True)
-    df.drop(columns=["Mes_ord"], inplace=True)
-    return df
-
-
+# ----------------------------
+# UI
+# ----------------------------
 st.title("Calendário FPPadel — tabela dinâmica (ABS/JOV)")
 
 with st.spinner("A detectar o PDF mais recente e a extrair dados..."):
@@ -288,7 +277,10 @@ if df.empty:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    mes_opts = sorted(df["Mes"].unique(), key=lambda x: MONTHS.index(x.upper()) if x.upper() in MONTHS else 999)
+    mes_opts = sorted(
+        df["Mes"].unique(),
+        key=lambda x: MONTHS.index(x.upper()) if x.upper() in MONTHS else 999
+    )
     mes_sel = st.selectbox("Mês", options=["(Todos)"] + mes_opts)
 
 with col2:
@@ -306,22 +298,45 @@ if div_sel != "(Todos)":
 if classe_sel:
     filtered = filtered[filtered["Classe"].isin(classe_sel)]
 
-# colunas pedidas
+# juntar Local + Organização no campo Local (exibição)
+def format_local(row):
+    loc = (row.get("Local_raw") or "").strip()
+    org = (row.get("Organizacao") or "").strip()
+    if org and org.lower() != "nan":
+        return f"{loc} — {org}"
+    return loc
+
+filtered["Local"] = filtered.apply(format_local, axis=1)
+
+# link Google Maps
+filtered["Mapa"] = filtered["Local"].apply(
+    lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}"
+)
+
+# colunas finais (na ordem pedida + mapa)
 filtered = filtered[[
     "Data (mês + dia)",
     "DIV",
     "Actividade",
     "Categorias",
     "Classe",
-    "Local"
+    "Local",
+    "Mapa",
 ]]
 
 st.subheader("Actividades")
-st.dataframe(filtered, use_container_width=True, hide_index=True)
+st.dataframe(
+    filtered,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Mapa": st.column_config.LinkColumn("Mapa", display_text="Abrir no Maps"),
+    },
+)
 
 st.download_button(
     "Download CSV (filtrado)",
-    data=filtered.to_csv(index=False).encode("utf-8"),
+    data=filtered.drop(columns=["Mapa"]).to_csv(index=False).encode("utf-8"),
     file_name=f"calendario_fppadel_{pdf_name.replace('.pdf','')}.csv",
     mime="text/csv"
 )
