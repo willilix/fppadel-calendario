@@ -72,14 +72,14 @@ def render_points_calculator():
         st.write(f"**Multiplicador do nível {nivel}**: `{m_nivel}`")
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
-    # ✅ Nota nova (substitui a antiga)
+    # ✅ Nota única, com parágrafos entre linhas
     st.info(
-        "M1 os primeiros 100 no ranking\n"
-        "M2 do 101 ao 250\n"
-        "M3 do 251 ao 500\n"
-        "M4 do 501 ao 750\n"
-        "M5 do 751 ao 1000\n"
-        "M6 do 1001 até ao último looser"
+        "- M1 os primeiros 100 no ranking\n\n"
+        "- M2 do 101 ao 250\n\n"
+        "- M3 do 251 ao 500\n\n"
+        "- M4 do 501 ao 750\n\n"
+        "- M5 do 751 ao 1000\n\n"
+        "- M6 do 1001 até ao último looser"
     )
 
 
