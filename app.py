@@ -4,6 +4,7 @@ import base64
 import datetime as dt
 from io import BytesIO
 from urllib.parse import urljoin, urlparse, quote_plus
+from typing import List
 
 import pandas as pd
 import pdfplumber
@@ -288,18 +289,36 @@ def sort_date_col(df: pd.DataFrame, col: str):
     return df
 
 
+
+def img_to_data_uri(path: str) -> str:
+    """Carrega uma imagem local e devolve data URI (garante que o logo aparece no Streamlit Cloud)."""
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
 # -------------------------------------------------
 # PDF / DATA FETCHING
 # -------------------------------------------------
-CALENDAR_PDF_URL = "https://fppadel.pt/wp-content/uploads/2025/01/Calendario_FPPadel_2025.pdf"
+CALENDAR_PDF_URLS: List[str] = [
+    "https://fppadel.pt/wp-content/uploads/2026/01/RG-01-CALENDARIO-ACTIVIDADES-PROVISORIO-4.pdf",
+    "https://fppadel.pt/wp-content/uploads/2026/01/RG-01-CALENDARIO-ACTIVIDADES-PROVISORIO-5.pdf",
+    "https://fppadel.pt/wp-content/uploads/2025/03/Calendario-de-Actividades-2025_1803.pdf",
+]
 CACHE_TTL_SECONDS = 60 * 60  # 1h
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
-def fetch_pdf_bytes(url: str) -> bytes:
-    r = requests.get(url, timeout=60)
-    r.raise_for_status()
-    return r.content
+def fetch_pdf_bytes_from_any(urls: List[str]) -> bytes:
+    last_err = None
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=60)
+            r.raise_for_status()
+            return r.content
+        except Exception as e:
+            last_err = e
+            continue
+    raise RuntimeError(f"Não foi possível obter nenhum PDF válido. Último erro: {last_err}")
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
@@ -373,10 +392,12 @@ def extract_events_from_pdf(pdf_bytes: bytes) -> pd.DataFrame:
 # -------------------------------------------------
 # UI HEADER
 # -------------------------------------------------
+logo_data = img_to_data_uri("armadura.png")
+
 st.markdown(
-    """
+    f"""
 <div class="logo-wrap">
-  <img src="https://raw.githubusercontent.com/streamlit/streamlit/develop/examples/data/logo.png" alt="logo" />
+  <img src="{logo_data}" alt="logo" />
   <div class="logo-text">
     Calendário de Torneios FPPadel — versão premium
   </div>
@@ -400,7 +421,7 @@ st.markdown(
 # -------------------------------------------------
 with st.spinner("A carregar calendário..."):
     try:
-        pdf_bytes = fetch_pdf_bytes(CALENDAR_PDF_URL)
+        pdf_bytes = fetch_pdf_bytes_from_any(CALENDAR_PDF_URLS)
         df = extract_events_from_pdf(pdf_bytes)
     except Exception as e:
         st.error(f"Não foi possível carregar/extrair o PDF: {e}")
