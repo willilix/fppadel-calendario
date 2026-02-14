@@ -73,25 +73,32 @@ def render_points_calculator():
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
     # ✅ Nota única, com parágrafos entre linhas
-    st.info(
-        "- M1 os primeiros 100 no ranking\n\n"
-        "- M2 do 101 ao 250\n\n"
-        "- M3 do 251 ao 500\n\n"
-        "- M4 do 501 ao 750\n\n"
-        "- M5 do 751 ao 1000\n\n"
-        "- M6 do 1001 até ao último looser\n\n"
-        "- F1 as primeiras 100 no ranking\n\n"
-        "- F2 da 101 ao 150\n\n"
-        "- F3 da 151 ao 300\n\n"
-        "- F4 da 301 ao 450\n\n"
-        "- F5 da 451 ao 600\n\n"
-        "- F6 da 601 até à última looser"
-    )
+    st.markdown("""
+<div style="line-height:1.8">
+
+<span style="color:#0A84FF; font-weight:600;">- M1</span> os primeiros 100 no ranking<br><br>
+<span style="color:#0A84FF; font-weight:600;">- M2</span> do 101 ao 250<br><br>
+<span style="color:#0A84FF; font-weight:600;">- M3</span> do 251 ao 500<br><br>
+<span style="color:#0A84FF; font-weight:600;">- M4</span> do 501 ao 750<br><br>
+<span style="color:#0A84FF; font-weight:600;">- M5</span> do 751 ao 1000<br><br>
+<span style="color:#0A84FF; font-weight:600;">- M6</span> do 1001 até ao último looser<br><br>
+
+<span style="color:#FF2D55; font-weight:600;">- F1</span> as primeiras 100 no ranking<br><br>
+<span style="color:#FF2D55; font-weight:600;">- F2</span> da 101 ao 150<br><br>
+<span style="color:#FF2D55; font-weight:600;">- F3</span> da 151 ao 300<br><br>
+<span style="color:#FF2D55; font-weight:600;">- F4</span> da 301 ao 450<br><br>
+<span style="color:#FF2D55; font-weight:600;">- F5</span> da 451 ao 600<br><br>
+<span style="color:#FF2D55; font-weight:600;">- F6</span> da 601 até à última looser
+
+</div>
+""", unsafe_allow_html=True)
+
 
 
 # Se quiseres testar este ficheiro isoladamente:
 if __name__ == "__main__":
     st.set_page_config(page_title="Calculadora de Pontos", layout="centered")
     render_points_calculator()
+
 
 
