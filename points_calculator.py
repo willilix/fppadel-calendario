@@ -79,7 +79,13 @@ def render_points_calculator():
         "- M3 do 251 ao 500\n\n"
         "- M4 do 501 ao 750\n\n"
         "- M5 do 751 ao 1000\n\n"
-        "- M6 do 1001 até ao último looser"
+        "- M6 do 1001 até ao último looser\n\n"
+        "- F1 os primeiros 100 no ranking\n\n"
+        "- F2 do 101 ao 150\n\n"
+        "- F3 do 151 ao 300\n\n"
+        "- F4 do 301 ao 450\n\n"
+        "- F5 do 451 ao 600\n\n"
+        "- F6 do 601 até à última looser"
     )
 
 
@@ -87,3 +93,4 @@ def render_points_calculator():
 if __name__ == "__main__":
     st.set_page_config(page_title="Calculadora de Pontos", layout="centered")
     render_points_calculator()
+
