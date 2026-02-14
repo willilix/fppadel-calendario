@@ -20,133 +20,192 @@ from points_calculator import render_points_calculator
 # -------------------------------------------------
 st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
 
-# Apple Sports UI (CSS)
+import streamlit as st
+
+# ---------------------------------------------------
+# CONFIGURAÇÃO DA PÁGINA
+# ---------------------------------------------------
+st.set_page_config(
+    page_title="FPPadel Calendário",
+    page_icon="🎾",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# ---------------------------------------------------
+# APPLE PREMIUM DARK UI
+# ---------------------------------------------------
 st.markdown("""
 <style>
-/* Container */
-.block-container { padding-top: 1.1rem; padding-bottom: 3rem; max-width: 1120px; }
-header { visibility: hidden; height: 0px; }
 
-/* Typography */
-h1, h2, h3 { letter-spacing: -0.02em; }
-a, a:visited { color: #0A84FF !important; text-decoration: none; }
+/* Layout base */
+.block-container {
+    padding-top: 1.1rem;
+    padding-bottom: 3rem;
+    max-width: 1120px;
+}
+
+header { visibility: hidden; }
+
+/* Fundo geral premium */
+.stApp {
+    background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(10,132,255,0.18), rgba(0,0,0,0) 55%),
+        linear-gradient(180deg, #0B0B10 0%, #07070A 100%);
+    color: rgba(237,237,243,0.96);
+}
+
+/* Links */
+a, a:visited {
+    color: #0A84FF !important;
+    text-decoration: none;
+}
 a:hover { text-decoration: underline; }
 
-/* Logo bar */
-.logo-wrap{
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-  margin-bottom: 10px;
-}
-.logo-wrap img{
-  display:block;
-  height: 252px;            /* ✅ 3x maior (antes ~84px) */
-  width: auto;
-}
-.logo-text{
-  font-weight: 700;
-  font-size: 1.05rem;
-  color: rgba(17,17,17,0.78);
-  text-align: center;
-  line-height: 1.2;
-  max-width: 520px;
-}
-
-/* Em mobile portrait: continua centrado e ligeiramente mais compacto */
-@media (max-width: 520px){
-  .logo-wrap{ gap: 12px; }
-  .logo-wrap img{ height: 210px; } /* ainda grande, mas não “rebenta” */
-  .logo-text{ font-size: 1.0rem; }
-}
-
-/* Top bar */
+/* Topbar glass */
 .topbar {
-  background: rgba(255,255,255,0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(17,17,17,0.08);
-  border-radius: 18px;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  box-shadow: 0 10px 30px rgba(17,17,17,0.06);
+    background: rgba(18,18,26,0.68);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 16px;
+    margin-bottom: 18px;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.55);
 }
-.top-title { font-weight: 750; font-size: 1.35rem; margin: 0; }
-.top-sub { color: rgba(17,17,17,0.62); font-size: 0.95rem; margin-top: 4px; }
+
+.top-title {
+    font-weight: 800;
+    font-size: 1.4rem;
+    margin: 0;
+}
+
+.top-sub {
+    color: rgba(237,237,243,0.6);
+    font-size: 0.95rem;
+}
 
 /* Pills */
 .pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(17,17,17,0.10);
-  background: rgba(17,17,17,0.03);
-  font-size: 0.78rem;
-  color: rgba(17,17,17,0.80);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+    font-size: 0.78rem;
 }
 
 /* Metric cards */
 .metric {
-  border-radius: 18px;
-  background: #FFFFFF;
-  border: 1px solid rgba(17,17,17,0.06);
-  box-shadow: 0 10px 30px rgba(17,17,17,0.05);
-  padding: 14px 14px;
+    border-radius: 20px;
+    background: rgba(18,18,26,0.75);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+    padding: 16px;
+    transition: all 0.25s ease;
 }
-.metric .label { color: rgba(17,17,17,0.62); font-size: 0.82rem; }
-.metric .value { font-weight: 760; font-size: 1.15rem; margin-top: 4px; }
-.metric .hint { color: rgba(17,17,17,0.55); font-size: 0.80rem; margin-top: 3px; }
 
-/* Wallet-like cards (mobile) */
+.metric:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 24px 70px rgba(0,0,0,0.65);
+}
+
+.metric .label {
+    color: rgba(237,237,243,0.6);
+    font-size: 0.82rem;
+}
+
+.metric .value {
+    font-weight: 800;
+    font-size: 1.2rem;
+    margin-top: 6px;
+}
+
+.metric .hint {
+    color: rgba(237,237,243,0.5);
+    font-size: 0.8rem;
+}
+
+/* Cards mobile style */
 .card {
-  border-radius: 22px;
-  background: #FFFFFF;
-  border: 1px solid rgba(17,17,17,0.06);
-  box-shadow: 0 12px 38px rgba(17,17,17,0.07);
-  padding: 16px 16px;
-  margin-bottom: 12px;
+    border-radius: 24px;
+    background: rgba(18,18,26,0.75);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+    padding: 18px;
+    margin-bottom: 14px;
+    transition: all 0.25s ease;
 }
-.card .title { font-weight: 760; font-size: 1.03rem; }
-.card .row { margin-top: 8px; color: rgba(17,17,17,0.72); font-size: 0.93rem; line-height: 1.32; }
-.card .actions { margin-top: 12px; }
 
-/* Inputs / buttons */
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 24px 70px rgba(0,0,0,0.65);
+}
+
+.card .title {
+    font-weight: 800;
+    font-size: 1.05rem;
+}
+
+.card .row {
+    margin-top: 8px;
+    font-size: 0.92rem;
+    color: rgba(237,237,243,0.75);
+}
+
+/* Inputs */
 div[data-baseweb="select"] > div,
-div[data-baseweb="input"] > div { border-radius: 14px !important; }
+div[data-baseweb="input"] > div {
+    border-radius: 16px !important;
+}
 
+/* Botões */
 .stButton button {
-  border-radius: 14px !important;
-  padding: 0.55rem 0.9rem !important;
+    border-radius: 16px !important;
+    padding: 0.55rem 1rem !important;
+    font-weight: 600;
 }
 
-/* Dataframe (desktop) */
-[data-testid="stDataFrame"] {
-  border-radius: 18px;
-  overflow: hidden;
-  border: 1px solid rgba(17,17,17,0.08);
-  box-shadow: 0 10px 30px rgba(17,17,17,0.04);
+/* Tabs estilo Apple */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px;
 }
 
-/* Tabs spacing */
-.stTabs [data-baseweb="tab-list"] { gap: 8px; }
 .stTabs [data-baseweb="tab"] {
-  border-radius: 999px;
-  border: 1px solid rgba(17,17,17,0.10);
-  background: rgba(17,17,17,0.03);
-  padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+    padding: 8px 16px;
+    color: rgba(237,237,243,0.75);
 }
+
 .stTabs [aria-selected="true"] {
-  background: rgba(10,132,255,0.12);
-  border-color: rgba(10,132,255,0.35);
+    background: rgba(10,132,255,0.18);
+    border-color: rgba(10,132,255,0.45);
+    color: white;
 }
+
+/* Dataframe */
+[data-testid="stDataFrame"] {
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 18px 60px rgba(0,0,0,0.5);
+}
+
 </style>
 """, unsafe_allow_html=True)
+
+# ---------------------------------------------------
+# A PARTIR DAQUI MANTÉM O TEU CÓDIGO ORIGINAL
+# (lógica calendário, PDF parsing, filtros, etc.)
+# ---------------------------------------------------
+
+# ⚠️ NÃO ALTERAR NADA ABAIXO DESTE PONTO
+# Cola aqui exatamente o resto do teu código actual
+
 
 # -------------------------------------------------
 # LOGO + TEXTO (centrado, funciona bem em mobile portrait)
