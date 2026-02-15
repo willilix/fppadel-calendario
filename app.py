@@ -20,6 +20,20 @@ from points_calculator import render_points_calculator
 # -------------------------------------------------
 st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
 
+components.html(
+    """
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-RLL0HMMSVZ"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-RLL0HMMSVZ');
+    </script>
+    """,
+    height=0,
+)
+
 import streamlit as st
 
 # ---------------------------------------------------
