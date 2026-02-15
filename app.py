@@ -79,7 +79,6 @@ if os.path.exists("ios-icon.png"):
         icon_b64 = base64.b64encode(f.read()).decode()
 
     st.markdown(f"""
-    <link rel="apple-touch-icon" sizes="180x180"
           href="data:image/png;base64,{icon_b64}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
