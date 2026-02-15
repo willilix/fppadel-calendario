@@ -15,6 +15,48 @@ from bs4 import BeautifulSoup
 # 👇 points calculator sub-app
 from points_calculator import render_points_calculator
 
+import uuid
+import requests
+import streamlit as st
+
+def ga4_track_pageview():
+    # evita enviar 20 eventos por causa dos reruns do Streamlit
+    if st.session_state.get("_ga_sent"):
+        return
+    st.session_state["_ga_sent"] = True
+
+    measurement_id = st.secrets.get("GA_MEASUREMENT_ID", "")
+    api_secret = st.secrets.get("GA_API_SECRET", "")
+    if not measurement_id or not api_secret:
+        return
+
+    # client_id simples por sessão (não é PII)
+    client_id = st.session_state.get("_ga_client_id")
+    if not client_id:
+        client_id = f"{uuid.uuid4()}.{uuid.uuid4()}"
+        st.session_state["_ga_client_id"] = client_id
+
+    url = f"https://www.google-analytics.com/mp/collect?measurement_id={measurement_id}&api_secret={api_secret}"
+
+    payload = {
+        "client_id": client_id,
+        "events": [
+            {
+                "name": "page_view",
+                "params": {
+                    "page_title": "FPPadel Calendário",
+                    "page_location": "streamlit_app",
+                },
+            }
+        ],
+    }
+
+    try:
+        requests.post(url, json=payload, timeout=3)
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA (SÓ UMA VEZ)
 # ---------------------------------------------------
@@ -24,6 +66,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+ga4_track_pageview()
+
 
 # ---------------------------------------------------
 # GOOGLE ANALYTICS (GA4)
