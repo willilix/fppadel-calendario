@@ -144,6 +144,7 @@ def render_points_calculator():
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
     # ✅ Nota única, com parágrafos entre linhas
+
 st.markdown("""
 <div style="display:flex; gap:60px; line-height:1.9; flex-wrap:wrap;">
 
@@ -174,10 +175,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
-
 # Se quiseres testar este ficheiro isoladamente:
 if __name__ == "__main__":
     st.set_page_config(page_title="Calculadora de Pontos", layout="centered")
     render_points_calculator()
+
 
