@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ----------------------------
 # Config (tabela do anexo)
@@ -42,6 +43,33 @@ def calcular_pontos(nivel: int, classe: int, posicao: str) -> float:
     return base * m_classe * m_nivel
 
 
+def _ga_event_points_used(nivel: int, classe: int, posicao: str):
+    """Envia evento GA4 (client-side). Tenta gtag no frame e no parent."""
+    # JSON simples (sem depender do json.dumps para manter leve)
+    components.html(
+        f"""
+        <script>
+          (function() {{
+            const params = {{
+              nivel: {int(nivel)},
+              classe: {int(classe)},
+              posicao: "{str(posicao).replace('"', '\\"')}"
+            }};
+            if (typeof gtag === 'function') {{
+              gtag('event', 'points_calculator_used', params);
+              return;
+            }}
+            if (window.parent && typeof window.parent.gtag === 'function') {{
+              window.parent.gtag('event', 'points_calculator_used', params);
+              return;
+            }}
+          }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
 def render_points_calculator():
     st.subheader("Calculadora de Pontos (FPPadel – Absolutos)")
     st.caption("Baseado na coluna “Quadro A” (classe 50.000) + multiplicadores de classe e nível.")
@@ -49,14 +77,45 @@ def render_points_calculator():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        nivel = st.selectbox("Nível", options=[2, 3, 4, 5, 6], index=0)
+        nivel = st.selectbox("Nível", options=[2, 3, 4, 5, 6], index=0, key="pc_nivel")
 
     with col2:
-        classe = st.selectbox("Classe do torneio", options=[50000, 25000, 10000, 5000, 2000], index=0)
+        classe = st.selectbox(
+            "Classe do torneio",
+            options=[50000, 25000, 10000, 5000, 2000],
+            index=0,
+            key="pc_classe",
+        )
 
     with col3:
-        posicao = st.selectbox("Posição final", options=list(BASE_POINTS_50K_QUADRO_A.keys()), index=0)
+        posicao = st.selectbox(
+            "Posição final",
+            options=list(BASE_POINTS_50K_QUADRO_A.keys()),
+            index=0,
+            key="pc_posicao",
+        )
 
+    # ----------------------------
+    # Tracking: 1 evento por sessão quando o user mexe
+    # ----------------------------
+    curr = f"{nivel}|{classe}|{posicao}"
+    prev = st.session_state.get("_pc_prev_signature")
+
+    # Guardamos a primeira renderização (não conta como uso)
+    if prev is None:
+        st.session_state["_pc_prev_signature"] = curr
+    else:
+        # Se mudou e ainda não enviámos nesta sessão
+        if curr != prev and not st.session_state.get("_pc_ga_sent"):
+            st.session_state["_pc_ga_sent"] = True
+            _ga_event_points_used(nivel=nivel, classe=classe, posicao=posicao)
+
+        # Atualiza sempre
+        st.session_state["_pc_prev_signature"] = curr
+
+    # ----------------------------
+    # Cálculo e UI
+    # ----------------------------
     pontos = calcular_pontos(nivel=nivel, classe=classe, posicao=posicao)
 
     base = BASE_POINTS_50K_QUADRO_A[posicao]
@@ -73,7 +132,8 @@ def render_points_calculator():
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
     # ✅ Nota única, com parágrafos entre linhas
-    st.markdown("""
+    st.markdown(
+        """
 <div style="line-height:1.8">
 
 <span style="color:#0A84FF; font-weight:600;">- M1</span> os primeiros 100 no ranking<br><br>
@@ -91,14 +151,12 @@ def render_points_calculator():
 <span style="color:#FF2D55; font-weight:600;">- F6</span> da 601 até à última looser
 
 </div>
-""", unsafe_allow_html=True)
-
+""",
+        unsafe_allow_html=True,
+    )
 
 
 # Se quiseres testar este ficheiro isoladamente:
 if __name__ == "__main__":
     st.set_page_config(page_title="Calculadora de Pontos", layout="centered")
     render_points_calculator()
-
-
-
