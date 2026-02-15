@@ -15,11 +15,19 @@ from bs4 import BeautifulSoup
 # 👇 points calculator sub-app
 from points_calculator import render_points_calculator
 
-# -------------------------------------------------
-# CONFIG
-# -------------------------------------------------
-st.set_page_config(page_title="Calendário FPPadel", page_icon="🎾", layout="wide")
+# ---------------------------------------------------
+# CONFIGURAÇÃO DA PÁGINA (SÓ UMA VEZ)
+# ---------------------------------------------------
+st.set_page_config(
+    page_title="FPPadel Calendário",
+    page_icon="🎾",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
+# ---------------------------------------------------
+# GOOGLE ANALYTICS (GA4)
+# ---------------------------------------------------
 components.html(
     """
     <!-- Google tag (gtag.js) -->
@@ -33,6 +41,7 @@ components.html(
     """,
     height=0,
 )
+
 
 import streamlit as st
 
