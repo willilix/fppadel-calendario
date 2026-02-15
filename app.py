@@ -36,11 +36,19 @@ components.html(
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      gtag('config', 'G-RLL0HMMSVZ');
+
+      // Força configuração com domínio correto
+      gtag('config', 'G-RLL0HMMSVZ', {
+        page_path: window.location.pathname,
+        page_title: document.title,
+        page_location: window.location.href,
+        send_page_view: true
+      });
     </script>
     """,
     height=0,
 )
+
 
 # ---------------------------------------------------
 # APPLE PREMIUM DARK UI
