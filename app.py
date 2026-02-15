@@ -42,19 +42,6 @@ components.html(
     height=0,
 )
 
-
-import streamlit as st
-
-# ---------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
-# ---------------------------------------------------
-st.set_page_config(
-    page_title="FPPadel Calendário",
-    page_icon="🎾",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
 # ---------------------------------------------------
 # APPLE PREMIUM DARK UI
 # ---------------------------------------------------
