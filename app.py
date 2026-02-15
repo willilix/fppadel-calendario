@@ -351,7 +351,7 @@ st.markdown("""
 }
 
 .logo-img{
-    height:240px;   /* ← altera aqui se quiseres maior/menor */
+    height:380px;   /* ← altera aqui se quiseres maior/menor */
     width:auto;
     object-fit:contain;
 
