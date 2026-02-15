@@ -1,5 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as components
+import requests
+import uuid
 
 # ----------------------------
 # Config (tabela do anexo)
@@ -43,60 +44,37 @@ def calcular_pontos(nivel: int, classe: int, posicao: str) -> float:
     return base * m_classe * m_nivel
 
 
-def _ga_points_used_event(nivel: int, classe: int, posicao: str):
-    """
-    Envia evento GA4 no browser com retry até o gtag existir.
-    Para DebugView: abrir a app com ?ga_debug=1
-    """
-    # escapar aspas por segurança
-    pos = str(posicao).replace('"', '\\"')
+# ----------------------------
+# GA4 Measurement Protocol (server-side)
+# ----------------------------
+def _ga4_send_event(event_name: str, params: dict):
+    measurement_id = st.secrets.get("GA_MEASUREMENT_ID", "")
+    api_secret = st.secrets.get("GA_API_SECRET", "")
+    if not measurement_id or not api_secret:
+        return
 
-    components.html(
-        f"""
-        <script>
-          (function() {{
-            const params = {{
-              nivel: {int(nivel)},
-              classe: {int(classe)},
-              posicao: "{pos}"
-            }};
+    # Reutiliza o client_id criado no app.py (ga4_track_pageview)
+    client_id = st.session_state.get("_ga_client_id")
+    if not client_id:
+        client_id = f"{uuid.uuid4()}.{uuid.uuid4()}"
+        st.session_state["_ga_client_id"] = client_id
 
-            // DebugView: adicionar ?ga_debug=1 no URL
-            const url = new URL(window.location.href);
-            if (url.searchParams.get('ga_debug') === '1') {{
-              params.debug_mode = true;
-            }}
+    url = f"https://www.google-analytics.com/mp/collect?measurement_id={measurement_id}&api_secret={api_secret}"
 
-            let tries = 0;
-            const maxTries = 24;      // ~6s
-            const intervalMs = 250;
+    payload = {
+        "client_id": client_id,
+        "events": [
+            {
+                "name": event_name,
+                "params": params,
+            }
+        ],
+    }
 
-            function fire() {{
-              try {{
-                if (typeof gtag === 'function') {{
-                  gtag('event', 'points_calculator_used', params);
-                  return true;
-                }}
-                if (window.parent && typeof window.parent.gtag === 'function') {{
-                  window.parent.gtag('event', 'points_calculator_used', params);
-                  return true;
-                }}
-              }} catch(e) {{}}
-              return false;
-            }}
-
-            const timer = setInterval(() => {{
-              tries += 1;
-              if (fire() || tries >= maxTries) {{
-                clearInterval(timer);
-              }}
-            }}, intervalMs);
-
-          }})();
-        </script>
-        """,
-        height=0,
-    )
+    try:
+        requests.post(url, json=payload, timeout=3)
+    except Exception:
+        pass
 
 
 def render_points_calculator():
@@ -136,7 +114,14 @@ def render_points_calculator():
     else:
         if curr != prev and not st.session_state.get("_pc_ga_sent"):
             st.session_state["_pc_ga_sent"] = True
-            _ga_points_used_event(nivel=nivel, classe=classe, posicao=posicao)
+            _ga4_send_event(
+                "points_calculator_used",
+                {
+                    "nivel": int(nivel),
+                    "classe": int(classe),
+                    "posicao": str(posicao),
+                },
+            )
 
         st.session_state["_pc_prev_signature"] = curr
 
@@ -158,7 +143,7 @@ def render_points_calculator():
         st.write(f"**Multiplicador do nível {nivel}**: `{m_nivel}`")
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
-    # ✅ Nota única, com parágrafos entre linhas (mantida)
+    # ✅ Nota única, com parágrafos entre linhas
     st.markdown("""
 <div style="line-height:1.8">
 
