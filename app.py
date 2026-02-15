@@ -67,8 +67,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 ga4_track_pageview()
-ga_install_tab_listeners_once()
-
 
 # ---------------------------------------------------
 # GOOGLE ANALYTICS (GA4)
