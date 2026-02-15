@@ -335,24 +335,77 @@ div[data-baseweb="input"] > div {
 
 
 # -------------------------------------------------
-# LOGO + TEXTO (centrado, funciona bem em mobile portrait)
+# LOGO + TEXTO (centrado + premium Apple)
 # -------------------------------------------------
+
+st.markdown("""
+<style>
+.logo-wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    gap:14px;
+    margin: 10px 0 30px 0;
+}
+
+.logo-img{
+    height:240px;   /* ← altera aqui se quiseres maior/menor */
+    width:auto;
+    object-fit:contain;
+
+    /* Apple-style shadow */
+    filter: drop-shadow(0 20px 40px rgba(0,0,0,0.45))
+            drop-shadow(0 6px 12px rgba(0,0,0,0.35));
+
+    /* Micro fade + lift */
+    animation: fadeUp 0.65s ease-out both;
+}
+
+.logo-text{
+    font-size:1rem;
+    font-weight:500;
+    opacity:0.85;
+    animation: fadeIn 0.9s ease-out both;
+}
+
+@keyframes fadeUp{
+    from { opacity:0; transform: translateY(10px) scale(0.98); }
+    to   { opacity:1; transform: translateY(0) scale(1); }
+}
+
+@keyframes fadeIn{
+    from { opacity:0; }
+    to   { opacity:0.85; }
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 logo_path = "armadura.png"
 if os.path.exists(logo_path):
     with open(logo_path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode("utf-8")
+
     st.markdown(f"""
     <div class="logo-wrap">
-      <img src="data:image/png;base64,{b64}" alt="armadura" style="height:380px;" />
-      <div class="logo-text">App oficial dos 6 zeritas - Powered by Grupo do 60</div>
+      <img class="logo-img" src="data:image/png;base64,{b64}" alt="armadura" />
+      <div class="logo-text">
+        App oficial dos 6 zeritas - Powered by Grupo do 60
+      </div>
     </div>
     """, unsafe_allow_html=True)
+
 else:
     st.markdown("""
     <div class="logo-wrap">
-      <div class="logo-text">App oficial dos 6 zeritas - Powered by Grupo do 60</div>
+      <div class="logo-text">
+        App oficial dos 6 zeritas - Powered by Grupo do 60
+      </div>
     </div>
     """, unsafe_allow_html=True)
+
 
 # -------------------------------------------------
 # CONSTANTS
