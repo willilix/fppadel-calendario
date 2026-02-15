@@ -67,6 +67,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 ga4_track_pageview()
+ga_install_tab_listeners_once()
 
 
 # ---------------------------------------------------
@@ -92,6 +93,72 @@ components.html(
     """,
     height=0,
 )
+
+def ga_event(name: str, params: dict | None = None):
+    """Envia um evento GA4 (client-side)."""
+    params = params or {}
+    js_params = str(params).replace("'", '"')  # JSON simples
+    components.html(
+        f"""
+        <script>
+          (function() {{
+            const params = {js_params};
+            // tenta no próprio frame
+            if (typeof gtag === 'function') {{
+              gtag('event', '{name}', params);
+              return;
+            }}
+            // tenta no parent (caso o gtag esteja no topo)
+            if (window.parent && typeof window.parent.gtag === 'function') {{
+              window.parent.gtag('event', '{name}', params);
+              return;
+            }}
+          }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
+def ga_install_tab_listeners_once():
+    """Instala listeners JS para track de tabs (só 1x por sessão)."""
+    if st.session_state.get("_ga_tabs_listeners"):
+        return
+    st.session_state["_ga_tabs_listeners"] = True
+
+    components.html(
+        """
+        <script>
+          (function() {
+            function send(name, params){
+              params = params || {};
+              if (typeof gtag === 'function') { gtag('event', name, params); return; }
+              if (window.parent && typeof window.parent.gtag === 'function') { window.parent.gtag('event', name, params); return; }
+            }
+
+            function bindTabs(){
+              const tabs = document.querySelectorAll('button[role="tab"]');
+              tabs.forEach((btn) => {
+                if (btn.dataset.gaBound === "1") return;
+                btn.dataset.gaBound = "1";
+                btn.addEventListener('click', () => {
+                  const tabName = (btn.innerText || "").trim();
+                  if (tabName) send('tab_change', { tab_name: tabName });
+                }, { passive: true });
+              });
+            }
+
+            // tenta já
+            bindTabs();
+
+            // e volta a tentar quando o Streamlit re-renderiza
+            const obs = new MutationObserver(() => bindTabs());
+            obs.observe(document.body, { childList: true, subtree: true });
+          })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 # ---------------------------------------------------
