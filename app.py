@@ -66,7 +66,25 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
 ga4_track_pageview()
+
+# ---------------------------------------------------
+# APPLE TOUCH ICON (iOS WebApp Icon)
+# ---------------------------------------------------
+import base64
+
+if os.path.exists("ios-icon.png"):
+    with open("ios-icon.png", "rb") as f:
+        icon_b64 = base64.b64encode(f.read()).decode()
+
+    st.markdown(f"""
+    <link rel="apple-touch-icon" sizes="180x180"
+          href="data:image/png;base64,{icon_b64}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    """, unsafe_allow_html=True)
+
 
 # ---------------------------------------------------
 # GOOGLE ANALYTICS (GA4)
