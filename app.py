@@ -62,7 +62,7 @@ def ga4_track_pageview():
 # ---------------------------------------------------
 st.set_page_config(
     page_title="FPPadel Calendário",
-    page_icon="🎾",
+    page_icon="armadura.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
