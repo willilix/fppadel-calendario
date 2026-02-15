@@ -1,5 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as components
+import requests
+import uuid
 
 # ----------------------------
 # Config (tabela do anexo)
@@ -32,7 +33,6 @@ LEVEL_MULTIPLIER = {
 
 
 def _fmt_pt(x: float) -> str:
-    """Formato PT: separador decimal vírgula e milhares com ponto."""
     return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
@@ -43,31 +43,35 @@ def calcular_pontos(nivel: int, classe: int, posicao: str) -> float:
     return base * m_classe * m_nivel
 
 
-def _ga_event_points_used(nivel: int, classe: int, posicao: str):
-    """Envia evento GA4 (client-side). Tenta gtag no frame e no parent."""
-    # JSON simples (sem depender do json.dumps para manter leve)
-    components.html(
-        f"""
-        <script>
-          (function() {{
-            const params = {{
-              nivel: {int(nivel)},
-              classe: {int(classe)},
-              posicao: "{str(posicao).replace('"', '\\"')}"
-            }};
-            if (typeof gtag === 'function') {{
-              gtag('event', 'points_calculator_used', params);
-              return;
-            }}
-            if (window.parent && typeof window.parent.gtag === 'function') {{
-              window.parent.gtag('event', 'points_calculator_used', params);
-              return;
-            }}
-          }})();
-        </script>
-        """,
-        height=0,
-    )
+# ----------------------------
+# GA4 SERVER-SIDE EVENT
+# ----------------------------
+def send_ga_event(event_name: str, params: dict):
+    measurement_id = st.secrets.get("GA_MEASUREMENT_ID")
+    api_secret = st.secrets.get("GA_API_SECRET")
+
+    if not measurement_id or not api_secret:
+        return
+
+    if "_ga_client_id" not in st.session_state:
+        st.session_state["_ga_client_id"] = f"{uuid.uuid4()}.{uuid.uuid4()}"
+
+    payload = {
+        "client_id": st.session_state["_ga_client_id"],
+        "events": [
+            {
+                "name": event_name,
+                "params": params,
+            }
+        ],
+    }
+
+    url = f"https://www.google-analytics.com/mp/collect?measurement_id={measurement_id}&api_secret={api_secret}"
+
+    try:
+        requests.post(url, json=payload, timeout=3)
+    except Exception:
+        pass
 
 
 def render_points_calculator():
@@ -77,45 +81,31 @@ def render_points_calculator():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        nivel = st.selectbox("Nível", options=[2, 3, 4, 5, 6], index=0, key="pc_nivel")
+        nivel = st.selectbox("Nível", options=[2, 3, 4, 5, 6], index=0)
 
     with col2:
-        classe = st.selectbox(
-            "Classe do torneio",
-            options=[50000, 25000, 10000, 5000, 2000],
-            index=0,
-            key="pc_classe",
-        )
+        classe = st.selectbox("Classe do torneio", options=[50000, 25000, 10000, 5000, 2000], index=0)
 
     with col3:
-        posicao = st.selectbox(
-            "Posição final",
-            options=list(BASE_POINTS_50K_QUADRO_A.keys()),
-            index=0,
-            key="pc_posicao",
+        posicao = st.selectbox("Posição final", options=list(BASE_POINTS_50K_QUADRO_A.keys()), index=0)
+
+    # --- TRACKING (1 vez por sessão)
+    signature = f"{nivel}|{classe}|{posicao}"
+    prev = st.session_state.get("_pc_signature")
+
+    if prev and signature != prev and not st.session_state.get("_pc_sent"):
+        st.session_state["_pc_sent"] = True
+        send_ga_event(
+            "points_calculator_used",
+            {
+                "nivel": nivel,
+                "classe": classe,
+                "posicao": posicao,
+            },
         )
 
-    # ----------------------------
-    # Tracking: 1 evento por sessão quando o user mexe
-    # ----------------------------
-    curr = f"{nivel}|{classe}|{posicao}"
-    prev = st.session_state.get("_pc_prev_signature")
+    st.session_state["_pc_signature"] = signature
 
-    # Guardamos a primeira renderização (não conta como uso)
-    if prev is None:
-        st.session_state["_pc_prev_signature"] = curr
-    else:
-        # Se mudou e ainda não enviámos nesta sessão
-        if curr != prev and not st.session_state.get("_pc_ga_sent"):
-            st.session_state["_pc_ga_sent"] = True
-            _ga_event_points_used(nivel=nivel, classe=classe, posicao=posicao)
-
-        # Atualiza sempre
-        st.session_state["_pc_prev_signature"] = curr
-
-    # ----------------------------
-    # Cálculo e UI
-    # ----------------------------
     pontos = calcular_pontos(nivel=nivel, classe=classe, posicao=posicao)
 
     base = BASE_POINTS_50K_QUADRO_A[posicao]
@@ -131,32 +121,9 @@ def render_points_calculator():
         st.write(f"**Multiplicador do nível {nivel}**: `{m_nivel}`")
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
-    # ✅ Nota única, com parágrafos entre linhas
-    st.markdown(
-        """
-<div style="line-height:1.8">
-
-<span style="color:#0A84FF; font-weight:600;">- M1</span> os primeiros 100 no ranking<br><br>
-<span style="color:#0A84FF; font-weight:600;">- M2</span> do 101 ao 250<br><br>
-<span style="color:#0A84FF; font-weight:600;">- M3</span> do 251 ao 500<br><br>
-<span style="color:#0A84FF; font-weight:600;">- M4</span> do 501 ao 750<br><br>
-<span style="color:#0A84FF; font-weight:600;">- M5</span> do 751 ao 1000<br><br>
-<span style="color:#0A84FF; font-weight:600;">- M6</span> do 1001 até ao último looser<br><br>
-
-<span style="color:#FF2D55; font-weight:600;">- F1</span> as primeiras 100 no ranking<br><br>
-<span style="color:#FF2D55; font-weight:600;">- F2</span> da 101 ao 150<br><br>
-<span style="color:#FF2D55; font-weight:600;">- F3</span> da 151 ao 300<br><br>
-<span style="color:#FF2D55; font-weight:600;">- F4</span> da 301 ao 450<br><br>
-<span style="color:#FF2D55; font-weight:600;">- F5</span> da 451 ao 600<br><br>
-<span style="color:#FF2D55; font-weight:600;">- F6</span> da 601 até à última looser
-
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    st.markdown("Calculadora pronta.", unsafe_allow_html=True)
 
 
-# Se quiseres testar este ficheiro isoladamente:
 if __name__ == "__main__":
     st.set_page_config(page_title="Calculadora de Pontos", layout="centered")
     render_points_calculator()
