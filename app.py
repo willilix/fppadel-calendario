@@ -343,7 +343,7 @@ if os.path.exists(logo_path):
         b64 = base64.b64encode(f.read()).decode("utf-8")
     st.markdown(f"""
     <div class="logo-wrap">
-      <img src="data:image/png;base64,{b64}" alt="armadura" style="height:120px;" />
+      <img src="data:image/png;base64,{b64}" alt="armadura" style="height:240px;" />
       <div class="logo-text">App oficial dos 6 zeritas - Powered by Grupo do 60</div>
     </div>
     """, unsafe_allow_html=True)
