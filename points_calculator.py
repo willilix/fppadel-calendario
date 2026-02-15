@@ -59,7 +59,10 @@ def _ga4_send_event(event_name: str, params: dict):
         client_id = f"{uuid.uuid4()}.{uuid.uuid4()}"
         st.session_state["_ga_client_id"] = client_id
 
-    url = f"https://www.google-analytics.com/mp/collect?measurement_id={measurement_id}&api_secret={api_secret}"
+    url = (
+        f"https://www.google-analytics.com/mp/collect?"
+        f"measurement_id={measurement_id}&api_secret={api_secret}"
+    )
 
     payload = {
         "client_id": client_id,
@@ -87,20 +90,10 @@ def render_points_calculator():
         nivel = st.selectbox("Nível", options=[2, 3, 4, 5, 6], index=0, key="pc_nivel")
 
     with col2:
-        classe = st.selectbox(
-            "Classe do torneio",
-            options=[50000, 25000, 10000, 5000, 2000],
-            index=0,
-            key="pc_classe",
-        )
+        classe = st.selectbox("Classe do torneio", options=[50000, 25000, 10000, 5000, 2000], index=0, key="pc_classe")
 
     with col3:
-        posicao = st.selectbox(
-            "Posição final",
-            options=list(BASE_POINTS_50K_QUADRO_A.keys()),
-            index=0,
-            key="pc_posicao",
-        )
+        posicao = st.selectbox("Posição final", options=list(BASE_POINTS_50K_QUADRO_A.keys()), index=0, key="pc_posicao")
 
     # ----------------------------
     # Tracking: 1 evento por sessão quando o user mexe
@@ -143,12 +136,13 @@ def render_points_calculator():
         st.write(f"**Multiplicador do nível {nivel}**: `{m_nivel}`")
         st.write(f"**Fórmula**: `{base} × {m_classe} × {m_nivel} = {_fmt_pt(pontos)}`")
 
-    # ✅ Nota única, com parágrafos entre linhas
+    # ✅ Listas lado a lado (dentro da função — evita “subir” para cima do logo)
+    st.markdown("---")
+    colF, colM = st.columns(2)
 
-colF, colM = st.columns(2)
-
-with colF:
-    st.markdown("""
+    with colF:
+        st.markdown(
+            """
 <div style="line-height:1.9;">
 <div style="font-weight:700; color:#FF2D55; margin-bottom:10px;">Feminino</div>
 
@@ -159,10 +153,13 @@ with colF:
 <span style="color:#FF2D55; font-weight:600;">- F5</span> da 451 ao 600<br><br>
 <span style="color:#FF2D55; font-weight:600;">- F6</span> da 601 até à última looser
 </div>
-""", unsafe_allow_html=True)
+"""
+            , unsafe_allow_html=True,
+        )
 
-with colM:
-    st.markdown("""
+    with colM:
+        st.markdown(
+            """
 <div style="line-height:1.9;">
 <div style="font-weight:700; color:#0A84FF; margin-bottom:10px;">Masculino</div>
 
@@ -173,13 +170,12 @@ with colM:
 <span style="color:#0A84FF; font-weight:600;">- M5</span> do 751 ao 1000<br><br>
 <span style="color:#0A84FF; font-weight:600;">- M6</span> do 1001 até ao último looser
 </div>
-""", unsafe_allow_html=True)
+"""
+            , unsafe_allow_html=True,
+        )
 
 
 # Se quiseres testar este ficheiro isoladamente:
 if __name__ == "__main__":
     st.set_page_config(page_title="Calculadora de Pontos", layout="centered")
     render_points_calculator()
-
-
-
