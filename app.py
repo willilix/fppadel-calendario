@@ -11,13 +11,36 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
+import uuid
 
 # 👇 points calculator sub-app
 from points_calculator import render_points_calculator
 
-import uuid
-import requests
-import streamlit as st
+# 🧪 STAGING badge automático
+
+IS_STAGING = os.path.exists("STAGING")
+
+if IS_STAGING:
+    st.markdown(
+        """
+        <style>
+        .staging-badge {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #ff4b4b;
+            color: white;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            z-index: 100000;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+        </style>
+        <div class="staging-badge">🧪 STAGING</div>
+        """,
+        unsafe_allow_html=True
+    )
 
 def ga4_track_pageview():
     # evita enviar 20 eventos por causa dos reruns do Streamlit
@@ -62,10 +85,93 @@ def ga4_track_pageview():
 # ---------------------------------------------------
 st.set_page_config(
     page_title="FPPadel Calendário",
-    page_icon="🎾",
+    page_icon="icon.png",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+import os, base64
+import streamlit as st
+import streamlit.components.v1 as components
+
+def set_ios_home_icon(path="icon.png"):
+    if not os.path.exists(path):
+        return
+
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    # JS injeta o link no <head>
+    components.html(
+        f"""
+        <script>
+          (function() {{
+            const href = "data:image/png;base64,{b64}";
+
+            // apple-touch-icon
+            let link = document.querySelector("link[rel='apple-touch-icon']");
+            if (!link) {{
+              link = document.createElement("link");
+              link.rel = "apple-touch-icon";
+              document.head.appendChild(link);
+            }}
+            link.href = href;
+
+            // favicon (opcional, ajuda nalguns casos)
+            let icon = document.querySelector("link[rel='icon']");
+            if (!icon) {{
+              icon = document.createElement("link");
+              icon.rel = "icon";
+              document.head.appendChild(icon);
+            }}
+            icon.href = href;
+
+            // PWA-ish (opcional)
+            let meta = document.querySelector("meta[name='apple-mobile-web-app-capable']");
+            if (!meta) {{
+              meta = document.createElement("meta");
+              meta.name = "apple-mobile-web-app-capable";
+              meta.content = "yes";
+              document.head.appendChild(meta);
+            }}
+          }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+set_ios_home_icon("icon.png")
+
+
+
+import os
+import streamlit as st
+
+IS_STAGING = os.path.exists("STAGING")
+
+if IS_STAGING:
+    st.markdown(
+        """
+        <style>
+        .staging-badge {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #ff4b4b;
+            color: white;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            z-index: 100000;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+        </style>
+        <div class="staging-badge">🧪 STAGING</div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 ga4_track_pageview()
 
@@ -491,13 +597,52 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
 
     return start_date, end_date
 
-def normalize_text(s: str) -> str:
-    return (s or "").strip()
+import pandas as pd
+import re
+
+def normalize_text(s) -> str:
+    if s is None or pd.isna(s):
+        return ""
+    s = str(s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
+    """Limpeza leve: normaliza espaços e remove duplicados de forma estável."""
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+
+    # Normalização de texto (trim + colapsar múltiplos espaços)
+    for col in out.columns:
+        if out[col].dtype == object:
+            out[col] = (
+                out[col]
+                .astype("string")
+                .fillna("")
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+                .replace({"": pd.NA})
+            )
+
+    # Dedupe por campos estruturais (sem alterar o layout final)
+    key_cols = [c for c in [
+        "DIV", "Actividade", "Categorias", "Classe",
+        "Local_pdf", "Organizacao_pdf", "Data_Inicio", "Data_Fim"
+    ] if c in out.columns]
+
+    if key_cols:
+        # chave estável para tolerar NaNs
+        tmp = out[key_cols].astype("string").fillna("").agg("|".join, axis=1).str.lower()
+        out = out.loc[~tmp.duplicated(keep="first")].copy()
+
+    return out
 
 # -------------------------------------------------
 # DISCOVER LATEST PDF
 # -------------------------------------------------
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=86400)
 def find_latest_calendar_pdf_url() -> str:
     try:
         html = requests.get(HOME_URL, timeout=20).text
@@ -539,7 +684,7 @@ def find_latest_calendar_pdf_url() -> str:
 
     return _pick_highest_version(found)
 
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=86400)
 def download_pdf_bytes(pdf_url: str) -> bytes:
     r = requests.get(pdf_url, timeout=30)
     r.raise_for_status()
@@ -548,6 +693,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 # -------------------------------------------------
 # PARSER (robusto: LOCAL/ORGANIZAÇÃO por coordenadas)
 # -------------------------------------------------
+@st.cache_data(ttl=86400)
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     def looks_like_money(tok: str) -> bool:
         return bool(re.fullmatch(r"[´']?\d{1,3}(?:\.\d{3})*(?:,\d+)?", tok))
@@ -771,30 +917,69 @@ def build_local_dash_org(row):
         return org
     return ""
 
-def compute_metrics(df_view: pd.DataFrame):
+import pandas as pd
+import datetime as dt
+
+def compute_metrics(view):
+    global df
+
+    # Garantir coluna Tipo
+    if "Tipo" not in df.columns:
+        for alt in ["TIPO", "tipo", "Categoria", "CATEGORIA", "Escalao", "Escalão"]:
+            if alt in df.columns:
+                df = df.rename(columns={alt: "Tipo"})
+                break
+    if "Tipo" not in df.columns:
+        return 0, None, 0
+
+    # ✅ Filtro tolerante
+    tipo_norm = df["Tipo"].astype(str).str.upper().str.strip()
+    view_norm = str(view).upper().strip()
+    df_view = df[tipo_norm.str.contains(view_norm, na=False)].copy()
+
     total = len(df_view)
+
+    # Datas
+    if "Data_Inicio" in df_view.columns:
+        df_view["Data_Inicio"] = pd.to_datetime(df_view["Data_Inicio"], errors="coerce")
+    if "Data_Fim" in df_view.columns:
+        df_view["Data_Fim"] = pd.to_datetime(df_view["Data_Fim"], errors="coerce")
+
     today = dt.date.today()
 
+    # Próximo evento
     next_date = None
     if not df_view.empty and "Data_Inicio" in df_view.columns:
-        future = df_view[df_view["Data_Inicio"].notna() & (df_view["Data_Inicio"] >= today)].copy()
+        future = df_view[
+            df_view["Data_Inicio"].notna() &
+            (df_view["Data_Inicio"].dt.date >= today)
+        ]
         if not future.empty:
-            future = future.sort_values(["Data_Inicio", "DIV", "Actividade"])
+            sort_cols = [c for c in ["Data_Inicio", "DIV", "Actividade"] if c in future.columns]
+            if sort_cols:
+                future = future.sort_values(sort_cols)
             next_date = future.iloc[0]["Data_Inicio"]
 
+    # Eventos deste mês
     start_month = dt.date(today.year, today.month, 1)
     if today.month == 12:
         end_month = dt.date(today.year, 12, 31)
     else:
         end_month = dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)
 
-    this_month = df_view[
-        (df_view["Data_Inicio"].notna()) &
-        (df_view["Data_Fim"].notna()) &
-        (df_view["Data_Inicio"] <= end_month) &
-        (df_view["Data_Fim"] >= start_month)
-    ]
-    return total, next_date, len(this_month)
+    if "Data_Inicio" in df_view.columns and "Data_Fim" in df_view.columns:
+        this_month = df_view[
+            df_view["Data_Inicio"].notna() &
+            df_view["Data_Fim"].notna() &
+            (df_view["Data_Inicio"].dt.date <= end_month) &
+            (df_view["Data_Fim"].dt.date >= start_month)
+        ]
+        this_month_count = len(this_month)
+    else:
+        this_month_count = 0
+
+    return total, next_date, this_month_count
+
 
 # -------------------------------------------------
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
@@ -813,11 +998,30 @@ with tab_cal:
             st.rerun()
 
     with st.spinner("A detectar o PDF mais recente e a extrair dados…"):
-        pdf_url = find_latest_calendar_pdf_url()
-        pdf_name = os.path.basename(urlparse(pdf_url).path)
-        year = infer_year_from_pdf_url(pdf_url)
-        pdf_bytes = download_pdf_bytes(pdf_url)
-        df = parse_calendar_pdf(pdf_bytes, year=year)
+        try:
+            pdf_url = find_latest_calendar_pdf_url()
+            pdf_name = os.path.basename(urlparse(pdf_url).path)
+            year = infer_year_from_pdf_url(pdf_url)
+            pdf_bytes = download_pdf_bytes(pdf_url)
+
+            df = parse_calendar_pdf(pdf_bytes, year=year)
+            df = normalize_and_dedupe(df)
+
+            # guarda último bom (para resiliência quando o site/PDF falha)
+            st.session_state["df_ok"] = df
+            st.session_state["pdf_url_ok"] = pdf_url
+            st.session_state["pdf_name_ok"] = pdf_name
+            st.session_state["year_ok"] = year
+        except Exception:
+            df = st.session_state.get("df_ok")
+            pdf_url = st.session_state.get("pdf_url_ok", "")
+            pdf_name = st.session_state.get("pdf_name_ok", "—")
+            year = st.session_state.get("year_ok", dt.date.today().year)
+
+            st.warning("Não consegui atualizar agora — a mostrar a última versão disponível.")
+            if df is None or (hasattr(df, "empty") and df.empty):
+                st.error("Ainda não há dados em cache. Tenta novamente daqui a pouco.")
+                st.stop()
 
     prev = st.session_state.get("last_pdf_name")
     st.session_state["last_pdf_name"] = pdf_name
@@ -841,6 +1045,7 @@ with tab_cal:
         st.stop()
 
     df["Local"] = df.apply(build_local_dash_org, axis=1)
+    df["Local"] = df["Local"].astype("string").fillna("").str.replace(r"\s+", " ", regex=True).str.strip().replace({"": pd.NA})
     df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
     tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
@@ -852,29 +1057,37 @@ with tab_cal:
         if div_value in ("ABS", "JOV"):
             base = base[base["DIV"] == div_value].copy()
 
-        # Filters
+        # Filters (em form para não recalcular a cada clique)
         if is_mobile:
             with st.expander("Filtros", expanded=False):
-                mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-                mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
-                classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-                classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
-                quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
-                search = st.text_input("Pesquisa", key=f"search_{tab_key}")
+                with st.form(key=f"filtros_form_{tab_key}"):
+                    mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+                    mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
+                    classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+                    classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+                    quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+                    search = st.text_input("Pesquisa", key=f"search_{tab_key}")
+                    st.form_submit_button("Aplicar")
         else:
-            c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-            with c1:
-                mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-                mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
-            with c2:
-                classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-                classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
-            with c3:
-                quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
-            with c4:
-                search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
+            with st.form(key=f"filtros_form_{tab_key}"):
+                c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+                with c1:
+                    mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+                    mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
+                with c2:
+                    classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+                    classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+                with c3:
+                    quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+                with c4:
+                    search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
+                st.form_submit_button("Aplicar")
 
         view = base.copy()
+
+        # garantir datas como datetime (para filtros funcionarem)
+        view["Data_Inicio"] = pd.to_datetime(view["Data_Inicio"], errors="coerce")
+        view["Data_Fim"] = pd.to_datetime(view["Data_Fim"], errors="coerce")
 
         if mes_sel != "(Todos)":
             view = view[view["Mes"] == mes_sel]
@@ -897,8 +1110,8 @@ with tab_cal:
             view = view[
                 (view["Data_Inicio"].notna()) &
                 (view["Data_Fim"].notna()) &
-                (view["Data_Inicio"] <= end) &
-                (view["Data_Fim"] >= start)
+                (view["Data_Inicio"].dt.date <= end) &
+                (view["Data_Fim"].dt.date >= start)
             ]
 
         if search.strip():
@@ -909,8 +1122,40 @@ with tab_cal:
                 mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
             view = view[mask]
 
-        # Metrics
-        total, next_date, this_month_count = compute_metrics(view)
+        # Metrics: total respeita filtros; "Este mês" e "Próximo" NÃO dependem do mês escolhido
+        total = len(view)
+
+        metrics_df = base.copy()  # <- importante: base (tab), não view (filtrado por mês)
+
+        metrics_df["Data_Inicio"] = pd.to_datetime(metrics_df["Data_Inicio"], errors="coerce")
+        metrics_df["Data_Fim"] = pd.to_datetime(metrics_df["Data_Fim"], errors="coerce")
+
+        today = dt.date.today()
+
+        # Próximo evento (no separador, independentemente do mês escolhido)
+        next_date = None
+        future = metrics_df[
+            metrics_df["Data_Inicio"].notna() &
+            (metrics_df["Data_Inicio"].dt.date >= today)
+        ]
+        if not future.empty:
+            sort_cols = [c for c in ["Data_Inicio", "DIV", "Categorias"] if c in future.columns]
+            future = future.sort_values(sort_cols if sort_cols else ["Data_Inicio"])
+            next_date = future.iloc[0]["Data_Inicio"]
+
+        # Eventos a decorrer este mês (mês actual, no separador, independentemente do mês escolhido)
+        start_month = dt.date(today.year, today.month, 1)
+        end_month = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
+
+        this_month = metrics_df[
+            metrics_df["Data_Inicio"].notna() &
+            metrics_df["Data_Fim"].notna() &
+            (metrics_df["Data_Inicio"].dt.date <= end_month) &
+            (metrics_df["Data_Fim"].dt.date >= start_month)
+        ]
+        this_month_count = len(this_month)
+
+                # Render Metrics (caixas)
         m1, m2, m3 = st.columns(3)
         with m1:
             st.markdown(f"""
@@ -920,6 +1165,7 @@ with tab_cal:
               <div class="hint">na selecção actual</div>
             </div>
             """, unsafe_allow_html=True)
+
         with m2:
             nxt = next_date.strftime("%d/%m") if next_date else "—"
             st.markdown(f"""
@@ -929,6 +1175,7 @@ with tab_cal:
               <div class="hint">data de início</div>
             </div>
             """, unsafe_allow_html=True)
+
         with m3:
             st.markdown(f"""
             <div class="metric">
