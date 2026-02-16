@@ -11,17 +11,12 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
+import uuid
 
 # 👇 points calculator sub-app
 from points_calculator import render_points_calculator
 
-import uuid
-import requests
-import streamlit as st
-
-import os
-import streamlit as st
-
+# 🧪 STAGING badge automático
 branch = os.getenv("STREAMLIT_GIT_BRANCH", "")
 
 if branch == "staging":
@@ -44,6 +39,7 @@ if branch == "staging":
         """,
         unsafe_allow_html=True
     )
+
 
 
 def ga4_track_pageview():
