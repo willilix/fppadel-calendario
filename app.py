@@ -90,6 +90,26 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+import base64
+
+def inject_ios_icon(path="icon.png"):
+    try:
+        with open(path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode()
+        st.markdown(
+            f"""
+            <link rel="apple-touch-icon" href="data:image/png;base64,{encoded}">
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+            """,
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
+
+inject_ios_icon()
+
+
 import os
 import streamlit as st
 
