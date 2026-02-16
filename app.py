@@ -17,7 +17,6 @@ import uuid
 from points_calculator import render_points_calculator
 
 # 🧪 STAGING badge automático
-branch = os.getenv("STREAMLIT_GIT_BRANCH", "")
 
 if branch == "staging":
     st.markdown(
