@@ -18,26 +18,30 @@ from points_calculator import render_points_calculator
 
 # 🧪 STAGING badge automático
 
-if branch == "staging":
+IS_STAGING = os.path.exists("STAGING")
+
+if IS_STAGING:
     st.markdown(
         """
-        <div style="
+        <style>
+        .staging-badge {
             position: fixed;
-            top: 10px;
-            right: 10px;
-            background-color: #ff4b4b;
+            top: 70px;
+            right: 20px;
+            background: #ff4b4b;
             color: white;
-            padding: 6px 12px;
-            border-radius: 8px;
+            padding: 8px 14px;
+            border-radius: 10px;
             font-weight: 600;
-            z-index: 9999;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-        ">
-            🧪 STAGING
-        </div>
+            z-index: 100000;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+        </style>
+        <div class="staging-badge">🧪 STAGING</div>
         """,
         unsafe_allow_html=True
     )
+)
 
 
 
