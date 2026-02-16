@@ -19,6 +19,33 @@ import uuid
 import requests
 import streamlit as st
 
+import os
+import streamlit as st
+
+branch = os.getenv("STREAMLIT_GIT_BRANCH", "")
+
+if branch == "staging":
+    st.markdown(
+        """
+        <div style="
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background-color: #ff4b4b;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            z-index: 9999;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        ">
+            🧪 STAGING
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 def ga4_track_pageview():
     # evita enviar 20 eventos por causa dos reruns do Streamlit
     if st.session_state.get("_ga_sent"):
