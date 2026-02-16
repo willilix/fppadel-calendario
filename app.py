@@ -93,6 +93,34 @@ st.set_page_config(
 import os
 st.write("BRANCH:", os.getenv("STREAMLIT_GIT_BRANCH"))
 
+import os
+import streamlit as st
+
+IS_STAGING = os.path.exists("STAGING")
+
+if IS_STAGING:
+    st.markdown(
+        """
+        <style>
+        .staging-badge {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            background: #ff4b4b;
+            color: white;
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            z-index: 100000;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+        </style>
+        <div class="staging-badge">🧪 STAGING</div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 ga4_track_pageview()
 
 # ---------------------------------------------------
