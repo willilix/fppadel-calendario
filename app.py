@@ -877,12 +877,12 @@ def compute_metrics(view):
     if "Tipo" not in df.columns:
         return 0, None, 0
 
-    # ✅ Normalizar Tipo (evita "ABS ", "abs", etc.)
-    df["Tipo"] = df["Tipo"].astype(str).str.strip().str.upper()
-    view_norm = str(view).strip().upper()
+# ✅ Normalizar e filtrar por contains (em vez de ==)
+tipo_norm = df["Tipo"].astype(str).str.upper().str.strip()
+view_norm = str(view).upper().strip()
+df_view = df[tipo_norm.str.contains(view_norm, na=False)].copy()
 
-    df_view = df[df["Tipo"] == view_norm].copy()
-    total = len(df_view)
+total = len(df_view)
 
     # --- Datas como datetime ---
     if "Data_Inicio" in df_view.columns:
