@@ -1063,36 +1063,37 @@ with tab_cal:
                 mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
             view = view[mask]
 
-        # Metrics
-        total, next_date, this_month_count = compute_metrics(view)
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.markdown(f"""
-            <div class="metric">
-              <div class="label">Eventos</div>
-              <div class="value">{total}</div>
-              <div class="hint">na selecção actual</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m2:
-            nxt = next_date.strftime("%d/%m") if next_date else "—"
-            st.markdown(f"""
-            <div class="metric">
-              <div class="label">Próximo</div>
-              <div class="value">{nxt}</div>
-              <div class="hint">data de início</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m3:
-            st.markdown(f"""
-            <div class="metric">
-              <div class="label">Este mês</div>
-              <div class="value">{this_month_count}</div>
-              <div class="hint">eventos a decorrer</div>
-            </div>
-            """, unsafe_allow_html=True)
+       # Metrics (baseadas na selecção actual)
+total = len(view)
 
-        st.markdown("### Actividades")
+# garantir datetime (caso venha como string)
+view_dates = view.copy()
+view_dates["Data_Inicio"] = pd.to_datetime(view_dates["Data_Inicio"], errors="coerce")
+view_dates["Data_Fim"] = pd.to_datetime(view_dates["Data_Fim"], errors="coerce")
+
+today = dt.date.today()
+
+next_date = None
+future = view_dates[
+    view_dates["Data_Inicio"].notna() &
+    (view_dates["Data_Inicio"].dt.date >= today)
+]
+if not future.empty:
+    sort_cols = [c for c in ["Data_Inicio", "DIV", "Categorias"] if c in future.columns]
+    future = future.sort_values(sort_cols if sort_cols else ["Data_Inicio"])
+    next_date = future.iloc[0]["Data_Inicio"]
+
+start_month = dt.date(today.year, today.month, 1)
+end_month = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
+
+this_month = view_dates[
+    view_dates["Data_Inicio"].notna() &
+    view_dates["Data_Fim"].notna() &
+    (view_dates["Data_Inicio"].dt.date <= end_month) &
+    (view_dates["Data_Fim"].dt.date >= start_month)
+]
+this_month_count = len(this_month)
+
 
         # (sem Actividade / sem Destaque)
         out = view[[
