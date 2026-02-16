@@ -491,9 +491,15 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
 
     return start_date, end_date
 
-def normalize_text(s: str) -> str:
-    return (s or "").strip()
+import pandas as pd
+import re
 
+def normalize_text(s) -> str:
+    if s is None or pd.isna(s):
+        return ""
+    s = str(s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
     """Limpeza leve: normaliza espaços e remove duplicados de forma estável."""
