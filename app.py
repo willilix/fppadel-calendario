@@ -90,24 +90,59 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-import base64
+import os, base64
+import streamlit as st
+import streamlit.components.v1 as components
 
-def inject_ios_icon(path="icon.png"):
-    try:
-        with open(path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode()
-        st.markdown(
-            f"""
-            <link rel="apple-touch-icon" href="data:image/png;base64,{encoded}">
-            <meta name="apple-mobile-web-app-capable" content="yes">
-            <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-            """,
-            unsafe_allow_html=True,
-        )
-    except Exception:
-        pass
+def set_ios_home_icon(path="icon.png"):
+    if not os.path.exists(path):
+        return
 
-inject_ios_icon()
+    with open(path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    # JS injeta o link no <head>
+    components.html(
+        f"""
+        <script>
+          (function() {{
+            const href = "data:image/png;base64,{b64}";
+
+            // apple-touch-icon
+            let link = document.querySelector("link[rel='apple-touch-icon']");
+            if (!link) {{
+              link = document.createElement("link");
+              link.rel = "apple-touch-icon";
+              document.head.appendChild(link);
+            }}
+            link.href = href;
+
+            // favicon (opcional, ajuda nalguns casos)
+            let icon = document.querySelector("link[rel='icon']");
+            if (!icon) {{
+              icon = document.createElement("link");
+              icon.rel = "icon";
+              document.head.appendChild(icon);
+            }}
+            icon.href = href;
+
+            // PWA-ish (opcional)
+            let meta = document.querySelector("meta[name='apple-mobile-web-app-capable']");
+            if (!meta) {{
+              meta = document.createElement("meta");
+              meta.name = "apple-mobile-web-app-capable";
+              meta.content = "yes";
+              document.head.appendChild(meta);
+            }}
+          }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+set_ios_home_icon("icon.png")
+
 
 
 import os
