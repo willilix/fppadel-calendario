@@ -863,63 +863,67 @@ def build_local_dash_org(row):
     return ""
 
 import pandas as pd
-import datetime as dt  # garante que tens isto no ficheiro
+import datetime as dt
 
 def compute_metrics(view):
     global df
 
-    # 1) Garantir que existe coluna "Tipo" (ou mapear alternativas)
+    # --- Garantir coluna Tipo (como já tinhas) ---
     if "Tipo" not in df.columns:
         for alt in ["TIPO", "tipo", "Categoria", "CATEGORIA", "Escalao", "Escalão"]:
             if alt in df.columns:
                 df = df.rename(columns={alt: "Tipo"})
                 break
-
-    # Se mesmo assim não houver, evita crash e devolve métricas vazias
     if "Tipo" not in df.columns:
         return 0, None, 0
 
-    df_view = df[df["Tipo"] == view].copy()
+    # ✅ Normalizar Tipo (evita "ABS ", "abs", etc.)
+    df["Tipo"] = df["Tipo"].astype(str).str.strip().str.upper()
+    view_norm = str(view).strip().upper()
 
-    # 2) Garantir datas como datetime (também Data_Fim porque usas abaixo)
+    df_view = df[df["Tipo"] == view_norm].copy()
+    total = len(df_view)
+
+    # --- Datas como datetime ---
     if "Data_Inicio" in df_view.columns:
         df_view["Data_Inicio"] = pd.to_datetime(df_view["Data_Inicio"], errors="coerce")
     if "Data_Fim" in df_view.columns:
         df_view["Data_Fim"] = pd.to_datetime(df_view["Data_Fim"], errors="coerce")
 
-    today = pd.Timestamp.today().normalize()
+    # ✅ Comparar por DIA (não por timestamp/hora)
+    today_date = dt.date.today()
 
-    # total (não existia no teu excerto)
-    total = len(df_view)
-
-    # 3) Próximo evento (future)
+    # Próximo evento (>= hoje)
     next_date = None
     if not df_view.empty and "Data_Inicio" in df_view.columns:
-        future = df_view[df_view["Data_Inicio"].notna() & (df_view["Data_Inicio"] >= today)].copy()
+        di = df_view["Data_Inicio"].dropna()
+        future = df_view[di.dt.date >= today_date].copy() if not di.empty else df_view.iloc[0:0]
         if not future.empty:
-            # mantém a tua ordenação (se estas colunas existirem)
             sort_cols = [c for c in ["Data_Inicio", "DIV", "Actividade"] if c in future.columns]
             if sort_cols:
                 future = future.sort_values(sort_cols)
             next_date = future.iloc[0]["Data_Inicio"]
 
-    # 4) Eventos que intersectam o mês actual (usar Timestamps, não date)
-    start_month = today.replace(day=1)
-    end_month = (start_month + pd.offsets.MonthEnd(0)).normalize()
+    # Eventos que intersectam o mês actual (por dia)
+    start_month = dt.date(today_date.year, today_date.month, 1)
+    if today_date.month == 12:
+        end_month = dt.date(today_date.year, 12, 31)
+    else:
+        end_month = dt.date(today_date.year, today_date.month + 1, 1) - dt.timedelta(days=1)
 
     if "Data_Inicio" in df_view.columns and "Data_Fim" in df_view.columns:
+        di = df_view["Data_Inicio"]
+        dfim = df_view["Data_Fim"]
         this_month = df_view[
-            (df_view["Data_Inicio"].notna()) &
-            (df_view["Data_Fim"].notna()) &
-            (df_view["Data_Inicio"] <= end_month) &
-            (df_view["Data_Fim"] >= start_month)
+            di.notna() & dfim.notna() &
+            (di.dt.date <= end_month) &
+            (dfim.dt.date >= start_month)
         ]
         this_month_count = len(this_month)
     else:
         this_month_count = 0
 
     return total, next_date, this_month_count
-
 
 # -------------------------------------------------
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
