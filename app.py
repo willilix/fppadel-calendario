@@ -1030,6 +1030,10 @@ with tab_cal:
 
         view = base.copy()
 
+        # garantir datas como datetime (para filtros funcionarem)
+        view["Data_Inicio"] = pd.to_datetime(view["Data_Inicio"], errors="coerce")
+        view["Data_Fim"] = pd.to_datetime(view["Data_Fim"], errors="coerce")
+
         if mes_sel != "(Todos)":
             view = view[view["Mes"] == mes_sel]
 
@@ -1051,8 +1055,8 @@ with tab_cal:
             view = view[
                 (view["Data_Inicio"].notna()) &
                 (view["Data_Fim"].notna()) &
-                (view["Data_Inicio"] <= end) &
-                (view["Data_Fim"] >= start)
+                (view["Data_Inicio"].dt.date <= end) &
+                (view["Data_Fim"].dt.date >= start)
             ]
 
         if search.strip():
