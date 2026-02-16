@@ -868,7 +868,7 @@ import datetime as dt
 def compute_metrics(view):
     global df
 
-    # --- Garantir coluna Tipo (como já tinhas) ---
+    # Garantir coluna Tipo
     if "Tipo" not in df.columns:
         for alt in ["TIPO", "tipo", "Categoria", "CATEGORIA", "Escalao", "Escalão"]:
             if alt in df.columns:
@@ -877,53 +877,54 @@ def compute_metrics(view):
     if "Tipo" not in df.columns:
         return 0, None, 0
 
-# ✅ Normalizar e filtrar por contains (em vez de ==)
-tipo_norm = df["Tipo"].astype(str).str.upper().str.strip()
-view_norm = str(view).upper().strip()
-df_view = df[tipo_norm.str.contains(view_norm, na=False)].copy()
+    # ✅ Filtro tolerante
+    tipo_norm = df["Tipo"].astype(str).str.upper().str.strip()
+    view_norm = str(view).upper().strip()
+    df_view = df[tipo_norm.str.contains(view_norm, na=False)].copy()
 
-total = len(df_view)
+    total = len(df_view)
 
-    # --- Datas como datetime ---
+    # Datas
     if "Data_Inicio" in df_view.columns:
         df_view["Data_Inicio"] = pd.to_datetime(df_view["Data_Inicio"], errors="coerce")
     if "Data_Fim" in df_view.columns:
         df_view["Data_Fim"] = pd.to_datetime(df_view["Data_Fim"], errors="coerce")
 
-    # ✅ Comparar por DIA (não por timestamp/hora)
-    today_date = dt.date.today()
+    today = dt.date.today()
 
-    # Próximo evento (>= hoje)
+    # Próximo evento
     next_date = None
     if not df_view.empty and "Data_Inicio" in df_view.columns:
-        di = df_view["Data_Inicio"].dropna()
-        future = df_view[di.dt.date >= today_date].copy() if not di.empty else df_view.iloc[0:0]
+        future = df_view[
+            df_view["Data_Inicio"].notna() &
+            (df_view["Data_Inicio"].dt.date >= today)
+        ]
         if not future.empty:
             sort_cols = [c for c in ["Data_Inicio", "DIV", "Actividade"] if c in future.columns]
             if sort_cols:
                 future = future.sort_values(sort_cols)
             next_date = future.iloc[0]["Data_Inicio"]
 
-    # Eventos que intersectam o mês actual (por dia)
-    start_month = dt.date(today_date.year, today_date.month, 1)
-    if today_date.month == 12:
-        end_month = dt.date(today_date.year, 12, 31)
+    # Eventos deste mês
+    start_month = dt.date(today.year, today.month, 1)
+    if today.month == 12:
+        end_month = dt.date(today.year, 12, 31)
     else:
-        end_month = dt.date(today_date.year, today_date.month + 1, 1) - dt.timedelta(days=1)
+        end_month = dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)
 
     if "Data_Inicio" in df_view.columns and "Data_Fim" in df_view.columns:
-        di = df_view["Data_Inicio"]
-        dfim = df_view["Data_Fim"]
         this_month = df_view[
-            di.notna() & dfim.notna() &
-            (di.dt.date <= end_month) &
-            (dfim.dt.date >= start_month)
+            df_view["Data_Inicio"].notna() &
+            df_view["Data_Fim"].notna() &
+            (df_view["Data_Inicio"].dt.date <= end_month) &
+            (df_view["Data_Fim"].dt.date >= start_month)
         ]
         this_month_count = len(this_month)
     else:
         this_month_count = 0
 
     return total, next_date, this_month_count
+
 
 # -------------------------------------------------
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
