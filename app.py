@@ -90,6 +90,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+import os
+st.write("BRANCH:", os.getenv("STREAMLIT_GIT_BRANCH"))
+
 ga4_track_pageview()
 
 # ---------------------------------------------------
