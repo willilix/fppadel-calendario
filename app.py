@@ -4,7 +4,7 @@ import base64
 import datetime as dt
 from io import BytesIO
 from urllib.parse import urljoin, urlparse, quote_plus
- 
+
 import pandas as pd
 import pdfplumber
 import requests
@@ -494,6 +494,39 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
 def normalize_text(s: str) -> str:
     return (s or "").strip()
 
+
+def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
+    """Limpeza leve: normaliza espaços e remove duplicados de forma estável."""
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+
+    # Normalização de texto (trim + colapsar múltiplos espaços)
+    for col in out.columns:
+        if out[col].dtype == object:
+            out[col] = (
+                out[col]
+                .astype("string")
+                .fillna("")
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+                .replace({"": pd.NA})
+            )
+
+    # Dedupe por campos estruturais (sem alterar o layout final)
+    key_cols = [c for c in [
+        "DIV", "Actividade", "Categorias", "Classe",
+        "Local_pdf", "Organizacao_pdf", "Data_Inicio", "Data_Fim"
+    ] if c in out.columns]
+
+    if key_cols:
+        # chave estável para tolerar NaNs
+        tmp = out[key_cols].astype("string").fillna("").agg("|".join, axis=1).str.lower()
+        out = out.loc[~tmp.duplicated(keep="first")].copy()
+
+    return out
+
 # -------------------------------------------------
 # DISCOVER LATEST PDF
 # -------------------------------------------------
@@ -548,6 +581,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 # -------------------------------------------------
 # PARSER (robusto: LOCAL/ORGANIZAÇÃO por coordenadas)
 # -------------------------------------------------
+@st.cache_data(ttl=900)
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     def looks_like_money(tok: str) -> bool:
         return bool(re.fullmatch(r"[´']?\d{1,3}(?:\.\d{3})*(?:,\d+)?", tok))
@@ -813,11 +847,30 @@ with tab_cal:
             st.rerun()
 
     with st.spinner("A detectar o PDF mais recente e a extrair dados…"):
-        pdf_url = find_latest_calendar_pdf_url()
-        pdf_name = os.path.basename(urlparse(pdf_url).path)
-        year = infer_year_from_pdf_url(pdf_url)
-        pdf_bytes = download_pdf_bytes(pdf_url)
-        df = parse_calendar_pdf(pdf_bytes, year=year)
+        try:
+            pdf_url = find_latest_calendar_pdf_url()
+            pdf_name = os.path.basename(urlparse(pdf_url).path)
+            year = infer_year_from_pdf_url(pdf_url)
+            pdf_bytes = download_pdf_bytes(pdf_url)
+
+            df = parse_calendar_pdf(pdf_bytes, year=year)
+            df = normalize_and_dedupe(df)
+
+            # guarda último bom (para resiliência quando o site/PDF falha)
+            st.session_state["df_ok"] = df
+            st.session_state["pdf_url_ok"] = pdf_url
+            st.session_state["pdf_name_ok"] = pdf_name
+            st.session_state["year_ok"] = year
+        except Exception:
+            df = st.session_state.get("df_ok")
+            pdf_url = st.session_state.get("pdf_url_ok", "")
+            pdf_name = st.session_state.get("pdf_name_ok", "—")
+            year = st.session_state.get("year_ok", dt.date.today().year)
+
+            st.warning("Não consegui atualizar agora — a mostrar a última versão disponível.")
+            if df is None or (hasattr(df, "empty") and df.empty):
+                st.error("Ainda não há dados em cache. Tenta novamente daqui a pouco.")
+                st.stop()
 
     prev = st.session_state.get("last_pdf_name")
     st.session_state["last_pdf_name"] = pdf_name
@@ -841,6 +894,7 @@ with tab_cal:
         st.stop()
 
     df["Local"] = df.apply(build_local_dash_org, axis=1)
+    df["Local"] = df["Local"].astype("string").fillna("").str.replace(r"\s+", " ", regex=True).str.strip().replace({"": pd.NA})
     df["Mapa"] = df["Local"].apply(lambda x: f"https://www.google.com/maps/search/?api=1&query={quote_plus(str(x))}")
 
     tab_abs, tab_jov, tab_all = st.tabs(["ABS", "JOV", "ABS + JOV"])
@@ -852,27 +906,31 @@ with tab_cal:
         if div_value in ("ABS", "JOV"):
             base = base[base["DIV"] == div_value].copy()
 
-        # Filters
+        # Filters (em form para não recalcular a cada clique)
         if is_mobile:
             with st.expander("Filtros", expanded=False):
-                mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-                mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
-                classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-                classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
-                quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
-                search = st.text_input("Pesquisa", key=f"search_{tab_key}")
+                with st.form(key=f"filtros_form_{tab_key}"):
+                    mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+                    mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
+                    classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+                    classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+                    quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+                    search = st.text_input("Pesquisa", key=f"search_{tab_key}")
+                    st.form_submit_button("Aplicar")
         else:
-            c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-            with c1:
-                mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
-                mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
-            with c2:
-                classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
-                classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
-            with c3:
-                quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
-            with c4:
-                search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
+            with st.form(key=f"filtros_form_{tab_key}"):
+                c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+                with c1:
+                    mes_opts = sorted(base["Mes"].unique(), key=month_sort_key)
+                    mes_sel = st.selectbox("Mês", ["(Todos)"] + mes_opts, key=f"mes_{tab_key}")
+                with c2:
+                    classes = sorted([c for c in base["Classe"].unique() if isinstance(c, str) and c.strip()])
+                    classe_sel = st.multiselect("Classe", classes, default=[], key=f"classe_{tab_key}")
+                with c3:
+                    quick = st.selectbox("Datas", ["(Nenhum)", "Próximos 7 dias", "Próximos 30 dias", "Este mês"], key=f"quick_{tab_key}")
+                with c4:
+                    search = st.text_input("Pesquisa", placeholder="Lisboa, FIP, S14, Madeira…", key=f"search_{tab_key}")
+                st.form_submit_button("Aplicar")
 
         view = base.copy()
 
