@@ -1098,6 +1098,37 @@ with tab_cal:
         ]
         this_month_count = len(this_month)
 
+                # Render Metrics (caixas)
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.markdown(f"""
+            <div class="metric">
+              <div class="label">Eventos</div>
+              <div class="value">{total}</div>
+              <div class="hint">na selecção actual</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with m2:
+            nxt = next_date.strftime("%d/%m") if next_date else "—"
+            st.markdown(f"""
+            <div class="metric">
+              <div class="label">Próximo</div>
+              <div class="value">{nxt}</div>
+              <div class="hint">data de início</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with m3:
+            st.markdown(f"""
+            <div class="metric">
+              <div class="label">Este mês</div>
+              <div class="value">{this_month_count}</div>
+              <div class="hint">eventos a decorrer</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("### Actividades")
 
         # (sem Actividade / sem Destaque)
         out = view[[
