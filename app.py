@@ -1122,8 +1122,39 @@ with tab_cal:
                 mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
             view = view[mask]
 
-        # Metrics (baseadas na selecção actual)
+        # Metrics: total respeita filtros; "Este mês" e "Próximo" NÃO dependem do mês escolhido
         total = len(view)
+
+        metrics_df = base.copy()  # <- importante: base (tab), não view (filtrado por mês)
+
+        metrics_df["Data_Inicio"] = pd.to_datetime(metrics_df["Data_Inicio"], errors="coerce")
+        metrics_df["Data_Fim"] = pd.to_datetime(metrics_df["Data_Fim"], errors="coerce")
+
+        today = dt.date.today()
+
+        # Próximo evento (no separador, independentemente do mês escolhido)
+        next_date = None
+        future = metrics_df[
+            metrics_df["Data_Inicio"].notna() &
+            (metrics_df["Data_Inicio"].dt.date >= today)
+        ]
+        if not future.empty:
+            sort_cols = [c for c in ["Data_Inicio", "DIV", "Categorias"] if c in future.columns]
+            future = future.sort_values(sort_cols if sort_cols else ["Data_Inicio"])
+            next_date = future.iloc[0]["Data_Inicio"]
+
+        # Eventos a decorrer este mês (mês actual, no separador, independentemente do mês escolhido)
+        start_month = dt.date(today.year, today.month, 1)
+        end_month = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
+
+        this_month = metrics_df[
+            metrics_df["Data_Inicio"].notna() &
+            metrics_df["Data_Fim"].notna() &
+            (metrics_df["Data_Inicio"].dt.date <= end_month) &
+            (metrics_df["Data_Fim"].dt.date >= start_month)
+        ]
+        this_month_count = len(this_month)
+
 
         # garantir datetime (caso venha como string)
         view_dates = view.copy()
