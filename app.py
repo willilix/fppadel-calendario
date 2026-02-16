@@ -41,9 +41,6 @@ if IS_STAGING:
         """,
         unsafe_allow_html=True
     )
-)
-
-
 
 def ga4_track_pageview():
     # evita enviar 20 eventos por causa dos reruns do Streamlit
