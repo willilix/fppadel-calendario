@@ -811,9 +811,18 @@ def build_local_dash_org(row):
         return org
     return ""
 
-def compute_metrics(df_view: pd.DataFrame):
-    total = len(df_view)
-    today = dt.date.today()
+import pandas as pd
+
+def compute_metrics(view):
+    df_view = df[df["Tipo"] == view].copy()
+
+    # ✅ garantir datetime
+    df_view["Data_Inicio"] = pd.to_datetime(df_view["Data_Inicio"], errors="coerce")
+
+    today = pd.Timestamp.today().normalize()
+
+    future = df_view[df_view["Data_Inicio"].notna() & (df_view["Data_Inicio"] >= today)].copy()
+    # resto igual...
 
     next_date = None
     if not df_view.empty and "Data_Inicio" in df_view.columns:
