@@ -536,7 +536,7 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
 # -------------------------------------------------
 # DISCOVER LATEST PDF
 # -------------------------------------------------
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=86400)
 def find_latest_calendar_pdf_url() -> str:
     try:
         html = requests.get(HOME_URL, timeout=20).text
@@ -578,7 +578,7 @@ def find_latest_calendar_pdf_url() -> str:
 
     return _pick_highest_version(found)
 
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=86400)
 def download_pdf_bytes(pdf_url: str) -> bytes:
     r = requests.get(pdf_url, timeout=30)
     r.raise_for_status()
@@ -587,7 +587,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 # -------------------------------------------------
 # PARSER (robusto: LOCAL/ORGANIZAÇÃO por coordenadas)
 # -------------------------------------------------
-@st.cache_data(ttl=900)
+@st.cache_data(ttl=86400)
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     def looks_like_money(tok: str) -> bool:
         return bool(re.fullmatch(r"[´']?\d{1,3}(?:\.\d{3})*(?:,\d+)?", tok))
