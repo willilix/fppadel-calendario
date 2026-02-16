@@ -1155,35 +1155,6 @@ with tab_cal:
         ]
         this_month_count = len(this_month)
 
-
-        # garantir datetime (caso venha como string)
-        view_dates = view.copy()
-        view_dates["Data_Inicio"] = pd.to_datetime(view_dates["Data_Inicio"], errors="coerce")
-        view_dates["Data_Fim"] = pd.to_datetime(view_dates["Data_Fim"], errors="coerce")
-
-        today = dt.date.today()
-
-        next_date = None
-        future = view_dates[
-            view_dates["Data_Inicio"].notna() &
-            (view_dates["Data_Inicio"].dt.date >= today)
-        ]
-        if not future.empty:
-            sort_cols = [c for c in ["Data_Inicio", "DIV", "Categorias"] if c in future.columns]
-            future = future.sort_values(sort_cols if sort_cols else ["Data_Inicio"])
-            next_date = future.iloc[0]["Data_Inicio"]
-
-        start_month = dt.date(today.year, today.month, 1)
-        end_month = (dt.date(today.year, today.month + 1, 1) - dt.timedelta(days=1)) if today.month != 12 else dt.date(today.year, 12, 31)
-
-        this_month = view_dates[
-            view_dates["Data_Inicio"].notna() &
-            view_dates["Data_Fim"].notna() &
-            (view_dates["Data_Inicio"].dt.date <= end_month) &
-            (view_dates["Data_Fim"].dt.date >= start_month)
-        ]
-        this_month_count = len(this_month)
-
                 # Render Metrics (caixas)
         m1, m2, m3 = st.columns(3)
         with m1:
