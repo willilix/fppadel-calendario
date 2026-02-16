@@ -91,9 +91,6 @@ st.set_page_config(
 )
 
 import os
-st.write("BRANCH:", os.getenv("STREAMLIT_GIT_BRANCH"))
-
-import os
 import streamlit as st
 
 IS_STAGING = os.path.exists("STAGING")
