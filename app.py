@@ -4,7 +4,7 @@ import base64
 import datetime as dt
 from io import BytesIO
 from urllib.parse import urljoin, urlparse, quote_plus
-
+ 
 import pandas as pd
 import pdfplumber
 import requests
