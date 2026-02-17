@@ -1323,6 +1323,11 @@ with tab_tour:
         from google.oauth2.service_account import Credentials
 
         sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # TOML section -> dict
+        # Garantir que a private_key tem quebras de linha reais (às vezes vem com \n)
+        pk = sa_info.get("private_key", "")
+        if isinstance(pk, str) and "\n" in pk:
+            sa_info["private_key"] = pk.replace("\n", "
+")
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
         gc = gspread.authorize(creds)
