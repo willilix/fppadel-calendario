@@ -1018,14 +1018,13 @@ def safe_slug(text: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
     return text[:60] if text else "user"
 
-@st.cache_resource
-def google_sheet():
-    import gspread
-    from google.oauth2.service_account import Credentials
+import gspread
+from google.oauth2.service_account import Credentials
 
+@st.cache_resource
+def google_spreadsheet():
     sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
 
-    # Corrigir private_key caso venha com \n (string literal)
     pk = sa_info.get("private_key", "")
     if "\\n" in pk:
         sa_info["private_key"] = pk.replace("\\n", "\n")
@@ -1034,8 +1033,12 @@ def google_sheet():
     creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
 
     gc = gspread.authorize(creds)
-    sh = gc.open_by_key(st.secrets["SHEET_ID"])
-    return sh.sheet1
+    return gc.open_by_key(st.secrets["SHEET_ID"])
+
+
+def google_sheet():
+    # Mantém compatibilidade com inscrições
+    return google_spreadsheet().worksheet("inscricoes")  # ⚠️ confirma se a aba das inscrições se chama Sheet1
 
 def ensure_headers(ws):
     wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
