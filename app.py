@@ -1318,22 +1318,26 @@ with tab_tour:
         return bool(st.secrets.get("DROPBOX_TOKEN", "").strip())
 
     @st.cache_resource
+    
     def google_sheet():
-        import gspread
-        from google.oauth2.service_account import Credentials
+    import gspread
+    from google.oauth2.service_account import Credentials
 
-        sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # TOML section -> dict
-        # Garantir que a private_key tem quebras de linha reais (às vezes vem com \n)
-        pk = sa_info.get("private_key", "")
-        if isinstance(pk, str) and "\n" in pk:
-            sa_info["private_key"] = pk.replace("\n", "
-")
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
-        gc = gspread.authorize(creds)
-        sh = gc.open_by_key(st.secrets["SHEET_ID"])
-        ws = sh.sheet1
-        return ws
+    sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
+
+    # 🔥 Normalizar private_key (corrige problema \\n vs \n)
+    pk = sa_info.get("private_key", "")
+    if "\\n" in pk:
+        sa_info["private_key"] = pk.replace("\\n", "\n")
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+    ]
+
+    creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(st.secrets["SHEET_ID"])
+    return sh.sheet1
 
     def ensure_headers(ws):
         wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
