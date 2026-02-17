@@ -1491,24 +1491,10 @@ with tab_tour:
         text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
         return text[:60] if text else "user"
 
-    # ---- Sub-navegação (mostra 'Inscrição' só depois de escolher um torneio)
-    if "show_inscricao" not in st.session_state:
-        st.session_state.show_inscricao = False
-    if "tour_view" not in st.session_state:
-        st.session_state.tour_view = "🏆 Torneios"
+    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
 
-    view_options = ["🏆 Torneios", "🔒 Organizador"]
-    if st.session_state.show_inscricao:
-        view_options.insert(1, "📝 Inscrição")
-
-    # Se a opção desapareceu, garantir que não fica selecionada
-    if st.session_state.tour_view not in view_options:
-        st.session_state.tour_view = "🏆 Torneios"
-
-    tour_view = st.radio("", view_options, horizontal=True, key="tour_view")
-    st.divider()
     # ---- Sub-tab: Cards de torneios
-    if tour_view == "🏆 Torneios":
+    with sub_tours:
         st.caption("Escolhe um torneio e clica em **Inscrever**.")
 
         if not TORNEIOS:
@@ -1532,24 +1518,12 @@ with tab_tour:
 
                     if st.button("Inscrever", key=f"insc_{t.get('id')}"):
                         st.session_state.torneio_sel = t.get("id")
-                        st.session_state.show_inscricao = True
-                        st.session_state.tour_view = "📝 Inscrição"
                         _track("torneio_select", {"torneio_id": t.get("id"), "torneio_nome": t.get("nome")})
-                        st.rerun()
+                        st.success(f"Torneio selecionado: {t.get('nome','')}")
+                        st.info("Agora vai à sub-tab **Inscrição**.")
 
     # ---- Sub-tab: Formulário
-    if tour_view == "📝 Inscrição":
-        cols_nav = st.columns([1, 3])
-        with cols_nav[0]:
-            if st.button("⬅️ Voltar", key="voltar_torneios"):
-                st.session_state.tour_view = "🏆 Torneios"
-                st.rerun()
-        with cols_nav[1]:
-            if st.button("✖️ Fechar inscrição", key="fechar_inscricao"):
-                st.session_state.show_inscricao = False
-                st.session_state.tour_view = "🏆 Torneios"
-                st.rerun()
-        st.divider()
+    with sub_form:
         if not TORNEIOS:
             st.warning("Ainda não há torneios ativos para inscrição.")
         elif not has_google_secrets():
@@ -1589,7 +1563,7 @@ with tab_tour:
                             st.exception(e)
 
     # ---- Sub-tab: Organizador
-    if tour_view == "🔒 Organizador":
+    with sub_admin:
         st.caption("Área privada do organizador: lista de inscritos e fotos.")
 
         admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
