@@ -985,7 +985,7 @@ def compute_metrics(view):
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
 # ✅ Rankings fica imediatamente ao lado de Pontos
 # -------------------------------------------------
-tab_cal, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🧮 Pontos", "🏆 Rankings"])
+tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"])
 
 # -------------------------------------------------
 # CALENDÁRIO TAB
@@ -1238,6 +1238,307 @@ with tab_cal:
         render_view("JOV")
     with tab_all:
         render_view(None)
+# -------------------------------------------------
+# TORNEIOS TAB (cards + inscrição + organizador)
+# -------------------------------------------------
+with tab_tour:
+    st.markdown("""
+    <div class="topbar">
+      <div class="top-title">Torneios</div>
+      <div class="top-sub">Inscrições dentro da app • com foto • área do organizador</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # =============================
+    # LISTA DE TORNEIOS (EDITA AQUI)
+    # =============================
+    TORNEIOS = [
+        {
+            "id": "T2026_001",
+            "nome": "Torneio Grupo do 60",
+            "data": "2026-03-14",
+            "local": "Lisboa",
+            "descricao": "Duplas • 1 set até 6 • TB no 6/6",
+            # pode ser URL ou path local (ex: 'assets/torneio1.png')
+            "img": "https://images.unsplash.com/photo-1521412644187-c49fa049e84d?w=1200",
+        },
+    ]
+
+    # defaults
+    if "torneio_sel" not in st.session_state:
+        st.session_state.torneio_sel = TORNEIOS[0]["id"] if TORNEIOS else None
+    if "admin_ok" not in st.session_state:
+        st.session_state.admin_ok = False
+
+    def get_torneio(tid: str):
+        for t in TORNEIOS:
+            if t["id"] == tid:
+                return t
+        return TORNEIOS[0] if TORNEIOS else None
+
+    def normalize_phone(phone: str) -> str:
+        phone = (phone or "").strip()
+        phone = re.sub(r"[^\d+]", "", phone)
+        return phone
+
+    def safe_slug(text: str) -> str:
+        text = (text or "").strip()
+        text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
+        return text[:60] if text else "user"
+
+    # =============================
+    # STORAGE: Google (recomendado) + fallback local
+    # =============================
+    LOCAL_CSV = "inscricoes.csv"
+    LOCAL_PHOTOS_DIR = "fotos"
+
+    def has_google_secrets() -> bool:
+        return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID", "DRIVE_FOLDER_ID"])
+
+    @st.cache_resource
+    def google_clients():
+        import gspread
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+
+        sa_info = st.secrets["GCP_SERVICE_ACCOUNT"]
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
+        gc = gspread.authorize(creds)
+        drive = build("drive", "v3", credentials=creds)
+        return gc, drive
+
+    def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str) -> dict:
+        from googleapiclient.http import MediaIoBaseUpload
+        folder_id = st.secrets["DRIVE_FOLDER_ID"]
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=False)
+        file_metadata = {"name": filename, "parents": [folder_id]}
+        created = drive.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id,name,webViewLink"
+        ).execute()
+        return created
+
+    def append_to_sheet(gc, row: dict):
+        sh = gc.open_by_key(st.secrets["SHEET_ID"])
+        ws = sh.sheet1
+        headers = ws.row_values(1)
+        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","drive_file_id","drive_link","foto_nome","storage"]
+        if headers != wanted:
+            ws.clear()
+            ws.append_row(wanted)
+
+        ws.append_row([
+            row["torneio_id"],
+            row["torneio_nome"],
+            row["timestamp"],
+            row["nome"],
+            row["telefone"],
+            row.get("drive_file_id",""),
+            row.get("drive_link",""),
+            row.get("foto_nome",""),
+            row.get("storage","google"),
+        ])
+
+    def read_sheet(gc) -> pd.DataFrame:
+        sh = gc.open_by_key(st.secrets["SHEET_ID"])
+        ws = sh.sheet1
+        values = ws.get_all_values()
+        if len(values) <= 1:
+            return pd.DataFrame(columns=values[0] if values else [])
+        return pd.DataFrame(values[1:], columns=values[0])
+
+    def local_save(row: dict, foto_bytes: bytes, ext: str):
+        os.makedirs(LOCAL_PHOTOS_DIR, exist_ok=True)
+        filename = f"{row['torneio_id']}_{safe_slug(row['nome'])}_{int(dt.datetime.now().timestamp())}.{ext}"
+        path = os.path.join(LOCAL_PHOTOS_DIR, filename)
+        with open(path, "wb") as f:
+            f.write(foto_bytes)
+
+        row["foto_nome"] = filename
+        row["storage"] = "local"
+        row["drive_link"] = path  # path local
+
+        df_new = pd.DataFrame([row])
+        if os.path.exists(LOCAL_CSV):
+            df = pd.read_csv(LOCAL_CSV)
+            df = pd.concat([df, df_new], ignore_index=True)
+        else:
+            df = df_new
+        df.to_csv(LOCAL_CSV, index=False)
+
+    def local_read() -> pd.DataFrame:
+        if os.path.exists(LOCAL_CSV):
+            return pd.read_csv(LOCAL_CSV)
+        return pd.DataFrame(columns=["torneio_id","torneio_nome","timestamp","nome","telefone","drive_file_id","drive_link","foto_nome","storage"])
+
+    def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
+        ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        telefone_norm = normalize_phone(telefone)
+
+        file_bytes = foto.getvalue()
+        ext = foto.name.split(".")[-1].lower()
+        mimetype = foto.type or "image/jpeg"
+
+        row = {
+            "torneio_id": torneio["id"],
+            "torneio_nome": torneio["nome"],
+            "timestamp": ts,
+            "nome": nome.strip(),
+            "telefone": telefone_norm,
+            "drive_file_id": "",
+            "drive_link": "",
+            "foto_nome": "",
+            "storage": "",
+        }
+
+        if has_google_secrets():
+            gc, drive = google_clients()
+            filename = f"{torneio['id']}_{safe_slug(nome)}_{int(dt.datetime.now().timestamp())}.{ext}"
+            created = upload_photo_to_drive(drive, file_bytes, filename, mimetype)
+            row["drive_file_id"] = created["id"]
+            row["drive_link"] = created.get("webViewLink", "")
+            row["foto_nome"] = created.get("name", filename)
+            row["storage"] = "google"
+            append_to_sheet(gc, row)
+        else:
+            local_save(row, file_bytes, ext)
+
+    # =============================
+    # SUB-TABS dentro de Torneios
+    # =============================
+    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
+
+    # ---- Sub-tab: Cards de torneios
+    with sub_tours:
+        st.caption("Clica em **Inscrever** num torneio para o selecionar.")
+
+        if not TORNEIOS:
+            st.warning("Ainda não tens torneios configurados.")
+        else:
+            cols = st.columns(3 if not is_mobile else 1)
+            for i, t in enumerate(TORNEIOS):
+                with cols[i % len(cols)]:
+                    st.image(t["img"], use_container_width=True)
+                    st.markdown(f"**{t['nome']}**")
+                    st.caption(f"📅 {t['data']} · 📍 {t['local']}")
+                    if t.get("descricao"):
+                        st.write(t["descricao"])
+
+                    if st.button("Inscrever", key=f"insc_{t['id']}"):
+                        st.session_state.torneio_sel = t["id"]
+                        ga_event("torneio_select", {"torneio_id": t["id"], "torneio_nome": t["nome"]})
+                        st.success(f"Torneio selecionado: {t['nome']}")
+                        st.info("Agora vai à sub-tab **Inscrição**.")
+
+    # ---- Sub-tab: Formulário
+    with sub_form:
+        torneio = get_torneio(st.session_state.torneio_sel)
+        if not torneio:
+            st.warning("Sem torneio selecionado.")
+        else:
+            st.markdown(f"**Torneio:** {torneio['nome']}  \n📅 {torneio['data']} · 📍 {torneio['local']}")
+
+            with st.form("form_inscricao", clear_on_submit=True):
+                nome = st.text_input("Nome completo")
+                telefone = st.text_input("Número de telefone")
+                foto = st.file_uploader("Fotografia", type=["jpg", "jpeg", "png"])
+                ok = st.form_submit_button("Submeter inscrição")
+
+            if ok:
+                nome = (nome or "").strip()
+                telefone_norm = normalize_phone(telefone)
+
+                if not nome:
+                    st.error("Falta o nome.")
+                elif not telefone_norm:
+                    st.error("Falta o número de telefone.")
+                elif foto is None:
+                    st.error("Falta a fotografia.")
+                else:
+                    try:
+                        save_inscricao(torneio, nome, telefone_norm, foto)
+                        ga_event("torneio_signup_submit", {"torneio_id": torneio["id"]})
+                        st.success("Inscrição submetida com sucesso ✅")
+
+                        if not has_google_secrets():
+                            st.warning("⚠️ Estás em modo local (CSV + pasta). No Streamlit Cloud isto pode não ser persistente. Recomendo Google Sheets/Drive.")
+                    except Exception as e:
+                        st.error("Erro ao guardar inscrição.")
+                        st.exception(e)
+
+    # ---- Sub-tab: Organizador
+    with sub_admin:
+        st.caption("Área privada do organizador: lista de inscritos e acesso às fotos.")
+
+        admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
+        if admin_pw is None:
+            st.warning("Define `ADMIN_PASSWORD` em Secrets para ativar login. (Por agora vou permitir acesso.)")
+            st.session_state.admin_ok = True
+
+        if not st.session_state.admin_ok:
+            pw = st.text_input("Password", type="password")
+            if st.button("Entrar"):
+                if pw == admin_pw:
+                    st.session_state.admin_ok = True
+                    st.rerun()
+                else:
+                    st.error("Password inválida.")
+        else:
+            try:
+                if has_google_secrets():
+                    gc, _drive = google_clients()
+                    df_insc = read_sheet(gc)
+                else:
+                    df_insc = local_read()
+            except Exception as e:
+                st.error("Erro ao ler inscrições.")
+                st.exception(e)
+                st.stop()
+
+            if df_insc.empty:
+                st.info("Ainda não há inscrições.")
+            else:
+                torneio_ids = sorted(df_insc["torneio_id"].astype(str).unique().tolist())
+                sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
+
+                view = df_insc.copy()
+                if sel != "(Todos)":
+                    view = view[view["torneio_id"].astype(str) == sel]
+
+                st.dataframe(view, use_container_width=True, hide_index=True)
+
+                st.markdown("### Fotos (últimas 12)")
+                tail = view.tail(12)
+
+                for _, r in tail.iterrows():
+                    st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
+                    if str(r.get("storage","")) == "google":
+                        link = r.get("drive_link", "")
+                        if link:
+                            st.markdown(f"[Abrir foto no Drive]({link})")
+                    else:
+                        path = r.get("drive_link", "")
+                        if isinstance(path, str) and os.path.exists(path):
+                            st.image(path, use_container_width=True)
+                        else:
+                            st.caption("Foto local não disponível (no Streamlit Cloud pode desaparecer).")
+                    st.divider()
+
+                st.download_button(
+                    "Download CSV (filtrado)",
+                    data=view.to_csv(index=False).encode("utf-8"),
+                    file_name="inscricoes_filtrado.csv",
+                    mime="text/csv"
+                )
+
+            if st.button("Sair"):
+                st.session_state.admin_ok = False
+                st.rerun()
 
 # -------------------------------------------------
 # PONTOS TAB
