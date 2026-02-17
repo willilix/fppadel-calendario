@@ -1240,6 +1240,7 @@ with tab_cal:
     with tab_all:
         render_view(None)
 # -------------------------------------------------
+# -------------------------------------------------
 # TORNEIOS TAB (cards + inscrição + organizador)
 # -------------------------------------------------
 with tab_tour:
@@ -1260,16 +1261,24 @@ with tab_tour:
             "data": "2026-03-14",
             "local": "Lisboa",
             "descricao": "Duplas • 1 set até 6 • TB no 6/6",
-            # pode ser URL ou path local (ex: 'assets/torneio1.png')
             "img": "https://images.unsplash.com/photo-1521412644187-c49fa049e84d?w=1200",
         },
     ]
 
-    # defaults
+    # --------
+    # Estado
+    # --------
     if "torneio_sel" not in st.session_state:
         st.session_state.torneio_sel = TORNEIOS[0]["id"] if TORNEIOS else None
     if "admin_ok" not in st.session_state:
         st.session_state.admin_ok = False
+
+    def _track(event_name: str, payload: dict | None = None):
+        """Chama ga_event se existir (não quebra a app se não existir)."""
+        try:
+            ga_event(event_name, payload or {})
+        except Exception:
+            pass
 
     def get_torneio(tid: str):
         for t in TORNEIOS:
@@ -1282,26 +1291,40 @@ with tab_tour:
         phone = re.sub(r"[^\d+]", "", phone)
         return phone
 
+    def safe_slug(text: str) -> str:
+        text = (text or "").strip()
+        text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
+        return text[:60] if text else "user"
+
     # =============================
-    # STORAGE: Google Sheets (persistente)
-    # Nota: guardar fotos no Drive com Service Account pode falhar por quota.
-    #       Para já guardamos a foto em base64 na própria Sheet (simples e funciona já).
+    # STORAGE
+    # - Dados: Google Sheets (via Service Account)
+    # - Fotos: Local (pasta 'fotos/')
+    #
+    # Nota: no Streamlit Cloud, ficheiros locais podem desaparecer em redeploy.
+    # Para o teu caso (torneios ocasionais), é aceitável.
     # =============================
+    LOCAL_PHOTOS_DIR = "fotos"
+    os.makedirs(LOCAL_PHOTOS_DIR, exist_ok=True)
+
     def has_google_secrets() -> bool:
         return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
 
     @st.cache_resource
-    def google_sheet_client():
+    def google_sheet():
         import gspread
         from google.oauth2.service_account import Credentials
 
-        sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # secção TOML
+        sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # TOML section -> dict
         scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
-        return gspread.authorize(creds)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(st.secrets["SHEET_ID"])
+        ws = sh.sheet1
+        return ws
 
-    def _ensure_sheet(ws):
-        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_mime","foto_b64","storage"]
+    def ensure_headers(ws):
+        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_nome","storage"]
         headers = ws.row_values(1)
         if headers != wanted:
             ws.clear()
@@ -1309,38 +1332,38 @@ with tab_tour:
         return wanted
 
     def append_to_sheet(row: dict):
-        gc = google_sheet_client()
-        sh = gc.open_by_key(st.secrets["SHEET_ID"])
-        ws = sh.sheet1
-        _ensure_sheet(ws)
-
+        ws = google_sheet()
+        ensure_headers(ws)
         ws.append_row([
             row.get("torneio_id",""),
             row.get("torneio_nome",""),
             row.get("timestamp",""),
             row.get("nome",""),
             row.get("telefone",""),
-            row.get("foto_mime",""),
-            row.get("foto_b64",""),
-            row.get("storage","sheet_b64"),
+            row.get("foto_nome",""),
+            row.get("storage","local"),
         ])
 
     def read_sheet() -> pd.DataFrame:
-        gc = google_sheet_client()
-        sh = gc.open_by_key(st.secrets["SHEET_ID"])
-        ws = sh.sheet1
+        ws = google_sheet()
         values = ws.get_all_values()
         if len(values) <= 1:
-            return pd.DataFrame(columns=values[0] if values else [])
+            cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_nome","storage"]
+            return pd.DataFrame(columns=cols)
         return pd.DataFrame(values[1:], columns=values[0])
+
+    def save_photo_locally(nome: str, torneio_id: str, foto) -> str:
+        ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
+        filename = f"{torneio_id}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+        path = os.path.join(LOCAL_PHOTOS_DIR, filename)
+        with open(path, "wb") as f:
+            f.write(foto.getbuffer())
+        return filename
 
     def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
         ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         telefone_norm = normalize_phone(telefone)
-
-        file_bytes = foto.getvalue()
-        mimetype = foto.type or "image/jpeg"
-        foto_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        foto_nome = save_photo_locally(nome, torneio["id"], foto)
 
         row = {
             "torneio_id": torneio["id"],
@@ -1348,14 +1371,9 @@ with tab_tour:
             "timestamp": ts,
             "nome": nome.strip(),
             "telefone": telefone_norm,
-            "foto_mime": mimetype,
-            "foto_b64": foto_b64,
-            "storage": "sheet_b64",
+            "foto_nome": foto_nome,
+            "storage": "local",
         }
-
-        if not has_google_secrets():
-            raise RuntimeError("Faltam secrets de Google Sheets (GCP_SERVICE_ACCOUNT e SHEET_ID).")
-
         append_to_sheet(row)
 
     # =============================
@@ -1365,7 +1383,7 @@ with tab_tour:
 
     # ---- Sub-tab: Cards de torneios
     with sub_tours:
-        st.caption("Clica em **Inscrever** num torneio para o selecionar.")
+        st.caption("Escolhe um torneio e clica em **Inscrever**.")
 
         if not TORNEIOS:
             st.warning("Ainda não tens torneios configurados.")
@@ -1381,43 +1399,46 @@ with tab_tour:
 
                     if st.button("Inscrever", key=f"insc_{t['id']}"):
                         st.session_state.torneio_sel = t["id"]
-                        ga_event("torneio_select", {"torneio_id": t["id"], "torneio_nome": t["nome"]})
+                        _track("torneio_select", {"torneio_id": t["id"], "torneio_nome": t["nome"]})
                         st.success(f"Torneio selecionado: {t['nome']}")
                         st.info("Agora vai à sub-tab **Inscrição**.")
 
     # ---- Sub-tab: Formulário
     with sub_form:
-        torneio = get_torneio(st.session_state.torneio_sel)
-        if not torneio:
-            st.warning("Sem torneio selecionado.")
+        if not has_google_secrets():
+            st.error("Falta configurar `GCP_SERVICE_ACCOUNT` e `SHEET_ID` nos Secrets do Streamlit Cloud.")
         else:
-            st.markdown(f"**Torneio:** {torneio['nome']}  \n📅 {torneio['data']} · 📍 {torneio['local']}")
+            torneio = get_torneio(st.session_state.torneio_sel)
+            if not torneio:
+                st.warning("Sem torneio selecionado.")
+            else:
+                st.markdown(f"**Torneio:** {torneio['nome']}  \n📅 {torneio['data']} · 📍 {torneio['local']}")
 
-            with st.form("form_inscricao", clear_on_submit=True):
-                nome = st.text_input("Nome completo")
-                telefone = st.text_input("Número de telefone")
-                foto = st.file_uploader("Fotografia", type=["jpg", "jpeg", "png"])
-                ok = st.form_submit_button("Submeter inscrição")
+                with st.form("form_inscricao", clear_on_submit=True):
+                    nome = st.text_input("Nome completo")
+                    telefone = st.text_input("Número de telefone")
+                    foto = st.file_uploader("Fotografia", type=["jpg", "jpeg", "png"])
+                    ok = st.form_submit_button("Submeter inscrição")
 
-            if ok:
-                nome = (nome or "").strip()
-                telefone_norm = normalize_phone(telefone)
+                if ok:
+                    nome = (nome or "").strip()
+                    telefone_norm = normalize_phone(telefone)
 
-                if not nome:
-                    st.error("Falta o nome.")
-                elif not telefone_norm:
-                    st.error("Falta o número de telefone.")
-                elif foto is None:
-                    st.error("Falta a fotografia.")
-                else:
-                    try:
-                        save_inscricao(torneio, nome, telefone_norm, foto)
-                        ga_event("torneio_signup_submit", {"torneio_id": torneio["id"]})
-                        st.success("Inscrição submetida com sucesso ✅")
-                        st.caption("Nota: a foto fica guardada na Google Sheet (base64).")
-                    except Exception as e:
-                        st.error("Erro ao guardar inscrição.")
-                        st.exception(e)
+                    if not nome:
+                        st.error("Falta o nome.")
+                    elif not telefone_norm:
+                        st.error("Falta o número de telefone.")
+                    elif foto is None:
+                        st.error("Falta a fotografia.")
+                    else:
+                        try:
+                            save_inscricao(torneio, nome, telefone_norm, foto)
+                            _track("torneio_signup_submit", {"torneio_id": torneio["id"]})
+                            st.success("Inscrição submetida com sucesso ✅")
+                            st.caption("A foto fica guardada na pasta `fotos/` da app.")
+                        except Exception as e:
+                            st.error("Erro ao guardar inscrição.")
+                            st.exception(e)
 
     # ---- Sub-tab: Organizador
     with sub_admin:
@@ -1437,57 +1458,52 @@ with tab_tour:
                 else:
                     st.error("Password inválida.")
         else:
-            try:
-                df_insc = read_sheet()
-            except Exception as e:
-                st.error("Erro ao ler inscrições.")
-                st.exception(e)
-                st.stop()
-
-            if df_insc.empty:
-                st.info("Ainda não há inscrições.")
+            if not has_google_secrets():
+                st.error("Falta configurar `GCP_SERVICE_ACCOUNT` e `SHEET_ID` nos Secrets.")
             else:
-                # filtrar por torneio
-                torneio_ids = sorted(df_insc["torneio_id"].astype(str).unique().tolist())
-                sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
+                try:
+                    df_insc = read_sheet()
+                except Exception as e:
+                    st.error("Erro ao ler inscrições da Google Sheet.")
+                    st.exception(e)
+                    st.stop()
 
-                view = df_insc.copy()
-                if sel != "(Todos)":
-                    view = view[view["torneio_id"].astype(str) == sel]
+                if df_insc.empty:
+                    st.info("Ainda não há inscrições.")
+                else:
+                    # filtro por torneio
+                    torneio_ids = sorted(df_insc["torneio_id"].astype(str).unique().tolist())
+                    sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
 
-                st.dataframe(view.drop(columns=[c for c in ["foto_b64"] if c in view.columns]),
-                            use_container_width=True, hide_index=True)
+                    view = df_insc.copy()
+                    if sel != "(Todos)":
+                        view = view[view["torneio_id"].astype(str) == sel]
 
-                st.markdown("### Fotos (últimas 12)")
-                tail = view.tail(12)
+                    st.dataframe(view.drop(columns=[c for c in ["storage"] if c in view.columns]), use_container_width=True, hide_index=True)
 
-                for _, r in tail.iterrows():
-                    st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
-                    b64 = r.get("foto_b64", "")
-                    mime = r.get("foto_mime", "image/jpeg")
-                    if isinstance(b64, str) and b64.strip():
-                        try:
-                            st.image(base64.b64decode(b64), caption=mime, use_container_width=True)
-                        except Exception:
-                            st.caption("Não consegui mostrar esta foto (base64 inválido).")
-                    else:
-                        st.caption("Sem foto.")
-                    st.divider()
+                    st.markdown("### Fotos (últimas 12)")
+                    tail = view.tail(12)
 
-                st.download_button(
-                    "Download CSV (filtrado)",
-                    data=view.drop(columns=[c for c in ["foto_b64"] if c in view.columns]).to_csv(index=False).encode("utf-8"),
-                    file_name="inscricoes_filtrado.csv",
-                    mime="text/csv"
-                )
+                    for _, r in tail.iterrows():
+                        st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
+                        foto_nome = r.get("foto_nome", "")
+                        path = os.path.join(LOCAL_PHOTOS_DIR, str(foto_nome))
+                        if foto_nome and os.path.exists(path):
+                            st.image(path, use_container_width=True)
+                        else:
+                            st.caption("Foto não encontrada na pasta local `fotos/` (pode acontecer após redeploy).")
+                        st.divider()
+
+                    st.download_button(
+                        "Download CSV (filtrado)",
+                        data=view.to_csv(index=False).encode("utf-8"),
+                        file_name="inscricoes_filtrado.csv",
+                        mime="text/csv"
+                    )
 
             if st.button("Sair"):
                 st.session_state.admin_ok = False
                 st.rerun()
-
-# -------------------------------------------------
-# PONTOS TAB
-# -------------------------------------------------
 with tab_pts:
     render_points_calculator()
 
