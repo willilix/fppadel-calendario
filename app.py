@@ -144,6 +144,65 @@ def set_ios_home_icon(path="icon.png"):
 
 set_ios_home_icon("icon.png")
 
+# --- Restore active main tab across reruns (keeps native st.tabs look) ---
+def _remember_tab_in_url(tab_slug: str):
+    """Persist selected main tab in the URL so we can restore it after reruns."""
+    try:
+        st.query_params["tab"] = tab_slug
+    except Exception:
+        pass
+
+def _inject_tab_restorer_js():
+    """Inject JS that auto-clicks the native Streamlit tab matching ?tab=..."""
+    try:
+        tab = st.query_params.get("tab")
+    except Exception:
+        tab = None
+    if not tab:
+        return
+
+    label_map = {
+        "calendario": "Calendário",
+        "torneios": "Torneios",
+        "pontos": "Pontos",
+        "rankings": "Rankings",
+    }
+    target_label = label_map.get(str(tab))
+    if not target_label:
+        return
+
+    components.html(
+        f"""
+        <script>
+        (function() {{
+          const label = {json.dumps(target_label)};
+          function clickTab() {{
+            const tabs = Array.from(document.querySelectorAll('[data-testid="stTab"]'));
+            for (const t of tabs) {{
+              const txt = (t.innerText || "").trim();
+              if (txt.includes(label)) {{
+                t.click();
+                return true;
+              }}
+            }}
+            return false;
+          }}
+
+          let tries = 0;
+          const iv = setInterval(() => {{
+            tries += 1;
+            if (clickTab() || tries > 25) {{
+              clearInterval(iv);
+            }}
+          }}, 200);
+        }})();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
 
 
 import os
@@ -1187,6 +1246,7 @@ def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
 # ✅ Rankings fica imediatamente ao lado de Pontos
 # -------------------------------------------------
+_inject_tab_restorer_js()  # restores selected tab after reruns
 tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"])
 
 # -------------------------------------------------
@@ -1491,37 +1551,10 @@ with tab_tour:
         text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
         return text[:60] if text else "user"
 
-    # ---- Sub-navegação (mostra 'Inscrição' só depois de escolher um torneio)
-    if "show_inscricao" not in st.session_state:
-        st.session_state.show_inscricao = False
-    if "tour_view" not in st.session_state:
-        st.session_state.tour_view = "🏆 Torneios"
+    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
 
-    def go_to_inscricao(tid: str, tnome: str = ""):
-        st.session_state.torneio_sel = tid
-        st.session_state.show_inscricao = True
-        st.session_state.tour_view = "📝 Inscrição"
-        _track("torneio_select", {"torneio_id": tid, "torneio_nome": tnome or ""})
-
-    def go_to_torneios():
-        st.session_state.tour_view = "🏆 Torneios"
-
-    def close_inscricao():
-        st.session_state.show_inscricao = False
-        st.session_state.tour_view = "🏆 Torneios"
-
-    view_options = ["🏆 Torneios", "🔒 Organizador"]
-    if st.session_state.show_inscricao:
-        view_options.insert(1, "📝 Inscrição")
-
-    # Se a opção desapareceu, garantir que não fica selecionada
-    if st.session_state.tour_view not in view_options:
-        st.session_state.tour_view = "🏆 Torneios"
-
-    tour_view = st.radio("", view_options, horizontal=True, key="tour_view")
-    st.divider()
     # ---- Sub-tab: Cards de torneios
-    if tour_view == "🏆 Torneios":
+    with sub_tours:
         st.caption("Escolhe um torneio e clica em **Inscrever**.")
 
         if not TORNEIOS:
@@ -1543,21 +1576,14 @@ with tab_tour:
                     if t.get("descricao"):
                         st.write(t["descricao"])
 
-                    st.button(
-                        "Inscrever",
-                        key=f"insc_{t.get('id')}",
-                        on_click=go_to_inscricao,
-                        args=(t.get("id"), t.get("nome")),
-                    )
+                    if st.button("Inscrever", key=f"insc_{t.get('id')}"):
+                        st.session_state.torneio_sel = t.get("id")
+                        _track("torneio_select", {"torneio_id": t.get("id"), "torneio_nome": t.get("nome")})
+                        st.success(f"Torneio selecionado: {t.get('nome','')}")
+                        st.info("Agora vai à sub-tab **Inscrição**.")
 
     # ---- Sub-tab: Formulário
-    if tour_view == "📝 Inscrição":
-        cols_nav = st.columns([1, 3])
-        with cols_nav[0]:
-            st.button("⬅️ Voltar", key="voltar_torneios", on_click=go_to_torneios)
-        with cols_nav[1]:
-            st.button("✖️ Fechar inscrição", key="fechar_inscricao", on_click=close_inscricao)
-        st.divider()
+    with sub_form:
         if not TORNEIOS:
             st.warning("Ainda não há torneios ativos para inscrição.")
         elif not has_google_secrets():
@@ -1588,6 +1614,7 @@ with tab_tour:
                         st.error("Falta a fotografia.")
                     else:
                         try:
+                            _remember_tab_in_url("torneios")
                             save_inscricao(torneio, nome, telefone_norm, foto)
                             _track("torneio_signup_submit", {"torneio_id": torneio.get("id")})
                             st.success("Inscrição submetida com sucesso ✅")
@@ -1597,7 +1624,7 @@ with tab_tour:
                             st.exception(e)
 
     # ---- Sub-tab: Organizador
-    if tour_view == "🔒 Organizador":
+    with sub_admin:
         st.caption("Área privada do organizador: lista de inscritos e fotos.")
 
         admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
