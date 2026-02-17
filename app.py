@@ -1291,29 +1291,30 @@ with tab_tour:
     # STORAGE: Google (recomendado) + fallback local
     # =============================
     LOCAL_CSV = "inscricoes.csv"
-    LOCAL_PHOTOS_DIR = "fotos"
+LOCAL_PHOTOS_DIR = "fotos"
 
-    def has_google_secrets() -> bool:
-        return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID", "DRIVE_FOLDER_ID"])
+def has_google_secrets() -> bool:
+    return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID", "DRIVE_FOLDER_ID"])
 
-    @st.cache_resource
-    def google_clients():
-        import gspread
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
+@st.cache_resource
+def google_clients():
+    import gspread
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
 
-        sa_info = st.secrets["GCP_SERVICE_ACCOUNT"]
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
-        gc = gspread.authorize(creds)
-        drive = build("drive", "v3", credentials=creds)
-        return gc, drive
+    sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # <-- importante com TOML section
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
+    gc = gspread.authorize(creds)
+    drive = build("drive", "v3", credentials=creds)
+    return gc, drive
 
-    def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str) -> dict:
+def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str) -> dict:
     from googleapiclient.http import MediaIoBaseUpload
+    import io  # se não tiveres import io no topo
 
     folder_id = st.secrets["DRIVE_FOLDER_ID"]
 
