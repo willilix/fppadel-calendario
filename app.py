@@ -1299,16 +1299,18 @@ with tab_tour:
     # =============================
     # STORAGE
     # - Dados: Google Sheets (via Service Account)
-    # - Fotos: Local (pasta 'fotos/')
+    # - Fotos: Dropbox (App Folder)  ✅ persistente (não perde em reboot)
     #
-    # Nota: no Streamlit Cloud, ficheiros locais podem desaparecer em redeploy.
-    # Para o teu caso (torneios ocasionais), é aceitável.
+    # Requisitos:
+    #   - requirements.txt: dropbox, gspread, google-auth
+    #   - secrets.toml: DROPBOX_TOKEN, SHEET_ID, [GCP_SERVICE_ACCOUNT]
     # =============================
-    LOCAL_PHOTOS_DIR = "fotos"
-    os.makedirs(LOCAL_PHOTOS_DIR, exist_ok=True)
 
     def has_google_secrets() -> bool:
         return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
+
+    def has_dropbox_token() -> bool:
+        return bool(st.secrets.get("DROPBOX_TOKEN", "").strip())
 
     @st.cache_resource
     def google_sheet():
@@ -1324,7 +1326,7 @@ with tab_tour:
         return ws
 
     def ensure_headers(ws):
-        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_nome","storage"]
+        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
         headers = ws.row_values(1)
         if headers != wanted:
             ws.clear()
@@ -1340,30 +1342,59 @@ with tab_tour:
             row.get("timestamp",""),
             row.get("nome",""),
             row.get("telefone",""),
-            row.get("foto_nome",""),
-            row.get("storage","local"),
+            row.get("foto_url",""),
+            row.get("storage","dropbox"),
         ])
 
     def read_sheet() -> pd.DataFrame:
         ws = google_sheet()
         values = ws.get_all_values()
         if len(values) <= 1:
-            cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_nome","storage"]
+            cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
             return pd.DataFrame(columns=cols)
         return pd.DataFrame(values[1:], columns=values[0])
 
-    def save_photo_locally(nome: str, torneio_id: str, foto) -> str:
-        ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
-        filename = f"{torneio_id}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
-        path = os.path.join(LOCAL_PHOTOS_DIR, filename)
-        with open(path, "wb") as f:
-            f.write(foto.getbuffer())
-        return filename
+    def upload_photo_to_dropbox(file_bytes: bytes, filename: str) -> str:
+        """Upload para Dropbox (App Folder) e devolve URL direto (raw=1)."""
+        import dropbox
+        from dropbox.files import WriteMode
+        from dropbox.sharing import SharedLinkSettings
+        from dropbox.exceptions import ApiError
+
+        token = st.secrets["DROPBOX_TOKEN"].strip()
+        dbx = dropbox.Dropbox(token)
+
+        # Em App Folder, isto vai para /Apps/<NomeDaApp>/torneios/<filename>
+        dropbox_path = f"/torneios/{filename}"
+
+        dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
+
+        # criar link (se já existir, reaproveita)
+        try:
+            link_meta = dbx.sharing_create_shared_link_with_settings(
+                dropbox_path,
+                settings=SharedLinkSettings()
+            )
+            url = link_meta.url
+        except ApiError as e:
+            if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
+                links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
+                url = links[0].url
+            else:
+                raise
+
+        # link direto para st.image
+        return url.replace("?dl=0", "?raw=1")
 
     def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
         ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         telefone_norm = normalize_phone(telefone)
-        foto_nome = save_photo_locally(nome, torneio["id"], foto)
+
+        file_bytes = foto.getvalue()
+        ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
+        filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+
+        foto_url = upload_photo_to_dropbox(file_bytes, filename)
 
         row = {
             "torneio_id": torneio["id"],
@@ -1371,10 +1402,11 @@ with tab_tour:
             "timestamp": ts,
             "nome": nome.strip(),
             "telefone": telefone_norm,
-            "foto_nome": foto_nome,
-            "storage": "local",
+            "foto_url": foto_url,
+            "storage": "dropbox",
         }
         append_to_sheet(row)
+
 
     # =============================
     # SUB-TABS dentro de Torneios
@@ -1407,6 +1439,8 @@ with tab_tour:
     with sub_form:
         if not has_google_secrets():
             st.error("Falta configurar `GCP_SERVICE_ACCOUNT` e `SHEET_ID` nos Secrets do Streamlit Cloud.")
+        elif not has_dropbox_token():
+            st.error("Falta configurar `DROPBOX_TOKEN` nos Secrets do Streamlit Cloud.")
         else:
             torneio = get_torneio(st.session_state.torneio_sel)
             if not torneio:
@@ -1435,7 +1469,7 @@ with tab_tour:
                             save_inscricao(torneio, nome, telefone_norm, foto)
                             _track("torneio_signup_submit", {"torneio_id": torneio["id"]})
                             st.success("Inscrição submetida com sucesso ✅")
-                            st.caption("A foto fica guardada na pasta `fotos/` da app.")
+                            st.caption("A foto foi enviada para o Dropbox (pasta Apps da tua app).")
                         except Exception as e:
                             st.error("Erro ao guardar inscrição.")
                             st.exception(e)
@@ -1486,12 +1520,12 @@ with tab_tour:
 
                     for _, r in tail.iterrows():
                         st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
-                        foto_nome = r.get("foto_nome", "")
-                        path = os.path.join(LOCAL_PHOTOS_DIR, str(foto_nome))
-                        if foto_nome and os.path.exists(path):
-                            st.image(path, use_container_width=True)
+                        foto_url = r.get("foto_url", "")
+                        if foto_url:
+                            st.image(foto_url, use_container_width=True)
+                            st.markdown(f"[Abrir no Dropbox]({foto_url})")
                         else:
-                            st.caption("Foto não encontrada na pasta local `fotos/` (pode acontecer após redeploy).")
+                            st.caption("Sem foto_url guardado (verifica o upload para Dropbox).")
                         st.divider()
 
                     st.download_button(
