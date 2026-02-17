@@ -1243,6 +1243,9 @@ with tab_cal:
 # -------------------------------------------------
 # TORNEIOS TAB (cards + inscrição + organizador)
 # -------------------------------------------------
+# -------------------------------------------------
+# TORNEIOS TAB (cards + inscrição + organizador)
+# -------------------------------------------------
 with tab_tour:
     st.markdown("""
     <div class="topbar">
@@ -1299,12 +1302,14 @@ with tab_tour:
     # =============================
     # STORAGE
     # - Dados: Google Sheets (via Service Account)
-    # - Fotos: Dropbox (App Folder)  ✅ persistente (não perde em reboot)
+    # - Fotos: Dropbox (Full Dropbox) ✅ persistente (não perde em reboot)
     #
     # Requisitos:
     #   - requirements.txt: dropbox, gspread, google-auth
     #   - secrets.toml: DROPBOX_TOKEN, SHEET_ID, [GCP_SERVICE_ACCOUNT]
     # =============================
+
+    DROPBOX_BASE_PATH = "/Torneios/Fotos"  # <- muda aqui se quiseres outra pasta
 
     def has_google_secrets() -> bool:
         return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
@@ -1329,6 +1334,7 @@ with tab_tour:
         wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
         headers = ws.row_values(1)
         if headers != wanted:
+            # só inicializa se estiver vazia OU for diferente (evita misturas)
             ws.clear()
             ws.append_row(wanted)
         return wanted
@@ -1345,73 +1351,77 @@ with tab_tour:
             row.get("foto_url",""),
             row.get("storage","dropbox"),
         ])
-def read_sheet() -> pd.DataFrame:
-    ws = google_sheet()
-    values = ws.get_all_values()
-    if len(values) <= 1:
-        cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-        return pd.DataFrame(columns=cols)
-    return pd.DataFrame(values[1:], columns=values[0])
 
+    def read_sheet() -> pd.DataFrame:
+        ws = google_sheet()
+        values = ws.get_all_values()
+        if len(values) <= 1:
+            cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
+            return pd.DataFrame(columns=cols)
+        return pd.DataFrame(values[1:], columns=values[0])
 
-def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
-    """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
-    import dropbox
-    from dropbox.files import WriteMode
-    from dropbox.sharing import SharedLinkSettings
-    from dropbox.exceptions import ApiError
+    def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
+        """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
+        import dropbox
+        from dropbox.files import WriteMode
+        from dropbox.sharing import SharedLinkSettings
+        from dropbox.exceptions import ApiError
 
-    token = st.secrets["DROPBOX_TOKEN"].strip()
-    dbx = dropbox.Dropbox(token)
+        token = st.secrets["DROPBOX_TOKEN"].strip()
+        dbx = dropbox.Dropbox(token)
 
-    folder_path = f"/Torneios/Fotos/{torneio_id}"
-    try:
-        dbx.files_create_folder_v2(folder_path)
-    except ApiError:
-        pass
+        # garante pastas (ignora se já existirem)
+        base = DROPBOX_BASE_PATH.rstrip("/")
+        folder_path = f"{base}/{torneio_id}"
+        try:
+            dbx.files_create_folder_v2(base)
+        except Exception:
+            pass
+        try:
+            dbx.files_create_folder_v2(folder_path)
+        except Exception:
+            pass
 
-    dropbox_path = f"{folder_path}/{filename}"
+        dropbox_path = f"{folder_path}/{filename}"
 
-    dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
+        dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
 
-    try:
-        link_meta = dbx.sharing_create_shared_link_with_settings(
-            dropbox_path,
-            settings=SharedLinkSettings()
-        )
-        url = link_meta.url
-    except ApiError as e:
-        if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
-            links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
-            url = links[0].url
-        else:
-            raise
+        # criar link (se já existir, reaproveita)
+        try:
+            link_meta = dbx.sharing_create_shared_link_with_settings(
+                dropbox_path,
+                settings=SharedLinkSettings()
+            )
+            url = link_meta.url
+        except ApiError as e:
+            if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
+                links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
+                url = links[0].url
+            else:
+                raise
 
-    return url.replace("?dl=0", "?raw=1")
+        return url.replace("?dl=0", "?raw=1")
 
+    def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
+        ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        telefone_norm = normalize_phone(telefone)
 
-def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
-    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    telefone_norm = normalize_phone(telefone)
+        file_bytes = foto.getvalue()
+        ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
+        filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
 
-    file_bytes = foto.getvalue()
-    ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
-    filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+        foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
 
-    foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
-
-    row = {
-        "torneio_id": torneio["id"],
-        "torneio_nome": torneio["nome"],
-        "timestamp": ts,
-        "nome": nome.strip(),
-        "telefone": telefone_norm,
-        "foto_url": foto_url,
-        "storage": "dropbox",
-    }
-    append_to_sheet(row)
-
-
+        row = {
+            "torneio_id": torneio["id"],
+            "torneio_nome": torneio["nome"],
+            "timestamp": ts,
+            "nome": nome.strip(),
+            "telefone": telefone_norm,
+            "foto_url": foto_url,
+            "storage": "dropbox",
+        }
+        append_to_sheet(row)
 
     # =============================
     # SUB-TABS dentro de Torneios
@@ -1474,7 +1484,7 @@ def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
                             save_inscricao(torneio, nome, telefone_norm, foto)
                             _track("torneio_signup_submit", {"torneio_id": torneio["id"]})
                             st.success("Inscrição submetida com sucesso ✅")
-                            st.caption("A foto foi enviada para o Dropbox (pasta Apps da tua app).")
+                            st.caption("A foto foi enviada para o Dropbox (na pasta configurada).")
                         except Exception as e:
                             st.error("Erro ao guardar inscrição.")
                             st.exception(e)
@@ -1518,7 +1528,11 @@ def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
                     if sel != "(Todos)":
                         view = view[view["torneio_id"].astype(str) == sel]
 
-                    st.dataframe(view.drop(columns=[c for c in ["storage"] if c in view.columns]), use_container_width=True, hide_index=True)
+                    st.dataframe(
+                        view.drop(columns=[c for c in ["storage"] if c in view.columns]),
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                     st.markdown("### Fotos (últimas 12)")
                     tail = view.tail(12)
@@ -1543,6 +1557,8 @@ def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
             if st.button("Sair"):
                 st.session_state.admin_ok = False
                 st.rerun()
+
+
 with tab_pts:
     render_points_calculator()
 
