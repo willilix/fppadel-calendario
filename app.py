@@ -1000,6 +1000,8 @@ def compute_metrics(view):
 #   dropbox
 # =================================================
 
+st.write(read_torneios())
+
 DROPBOX_BASE_PATH = "/Torneios/Fotos"  # podes mudar no código (ou tornar secret se quiseres)
 
 def has_google_secrets() -> bool:
