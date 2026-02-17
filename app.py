@@ -1187,12 +1187,26 @@ def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
 # ✅ Rankings fica imediatamente ao lado de Pontos
 # -------------------------------------------------
-tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"])
+# -------------------------------------------------
+# NAVEGAÇÃO PRINCIPAL (substitui st.tabs para permitir mudança programática)
+# -------------------------------------------------
+if "main_view" not in st.session_state:
+    st.session_state.main_view = "📅 Calendário"
+
+MAIN_VIEWS = ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"]
+st.radio(
+    " ",
+    MAIN_VIEWS,
+    key="main_view",
+    horizontal=True,
+    label_visibility="collapsed",
+)
+
 
 # -------------------------------------------------
 # CALENDÁRIO TAB
 # -------------------------------------------------
-with tab_cal:
+if st.session_state.main_view == "📅 Calendário":
     left, right = st.columns([1, 1])
     with right:
         if st.button("⟲ Actualizar", help="Ignora cache e volta a detectar o PDF mais recente"):
@@ -1447,7 +1461,7 @@ with tab_cal:
 # -------------------------------------------------
 # TORNEIOS TAB (cards + inscrição + organizador)
 # -------------------------------------------------
-with tab_tour:
+if st.session_state.main_view == "🎾 Torneios":
     st.markdown("""
     <div class="topbar">
       <div class="top-title">Torneios</div>
@@ -1495,19 +1509,25 @@ with tab_tour:
     if "show_inscricao" not in st.session_state:
         st.session_state.show_inscricao = False
     if "tour_view" not in st.session_state:
+        st.session_state.main_view = "🎾 Torneios"
         st.session_state.tour_view = "🏆 Torneios"
 
     def go_to_inscricao(tid: str, tnome: str = ""):
+        st.session_state.main_view = "🎾 Torneios"
         st.session_state.torneio_sel = tid
         st.session_state.show_inscricao = True
+        st.session_state.main_view = "🎾 Torneios"
         st.session_state.tour_view = "📝 Inscrição"
         _track("torneio_select", {"torneio_id": tid, "torneio_nome": tnome or ""})
 
     def go_to_torneios():
+        st.session_state.main_view = "🎾 Torneios"
+        st.session_state.main_view = "🎾 Torneios"
         st.session_state.tour_view = "🏆 Torneios"
 
     def close_inscricao():
         st.session_state.show_inscricao = False
+        st.session_state.main_view = "🎾 Torneios"
         st.session_state.tour_view = "🏆 Torneios"
 
     view_options = ["🏆 Torneios", "🔒 Organizador"]
@@ -1516,6 +1536,7 @@ with tab_tour:
 
     # Se a opção desapareceu, garantir que não fica selecionada
     if st.session_state.tour_view not in view_options:
+        st.session_state.main_view = "🎾 Torneios"
         st.session_state.tour_view = "🏆 Torneios"
 
     tour_view = st.radio("", view_options, horizontal=True, key="tour_view")
@@ -1660,13 +1681,13 @@ with tab_tour:
                         st.divider()
 
 
-with tab_pts:
+if st.session_state.main_view == "🧮 Pontos":
     render_points_calculator()
 
 # -------------------------------------------------
 # RANKINGS TAB (link)
 # -------------------------------------------------
-with tab_rank:
+if st.session_state.main_view == "🏆 Rankings":
     st.subheader("Rankings (TieSports)")
     st.caption("Abre o ranking no site oficial.")
     st.link_button("🏆 Abrir Rankings", "https://tour.tiesports.com/fpp/weekly_rankings", use_container_width=True)
