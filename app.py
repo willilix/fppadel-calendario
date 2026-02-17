@@ -1317,9 +1317,8 @@ with tab_tour:
     def has_dropbox_token() -> bool:
         return bool(st.secrets.get("DROPBOX_TOKEN", "").strip())
 
-    @st.cache_resource
-    
-    def google_sheet():
+@st.cache_resource
+def google_sheet():
     import gspread
     from google.oauth2.service_account import Credentials
 
@@ -1338,6 +1337,15 @@ with tab_tour:
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(st.secrets["SHEET_ID"])
     return sh.sheet1
+
+
+def ensure_headers(ws):
+    wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
+    headers = ws.row_values(1)
+    if headers != wanted:
+        ws.clear()
+        ws.append_row(wanted)
+    return wanted
 
     def ensure_headers(ws):
         wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
