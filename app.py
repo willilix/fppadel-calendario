@@ -982,6 +982,154 @@ def compute_metrics(view):
     return total, next_date, this_month_count
 
 
+
+# =================================================
+# TORNEIOS: STORAGE HELPERS (Google Sheets + Dropbox)
+# =================================================
+# Dados: Google Sheets (Service Account)
+# Fotos: Dropbox (Full Dropbox) em pasta específica
+#
+# Secrets necessários:
+#   SHEET_ID
+#   [GCP_SERVICE_ACCOUNT]
+#   DROPBOX_TOKEN
+#
+# Dependências:
+#   gspread
+#   google-auth
+#   dropbox
+# =================================================
+
+DROPBOX_BASE_PATH = "/Torneios/Fotos"  # podes mudar no código (ou tornar secret se quiseres)
+
+def has_google_secrets() -> bool:
+    return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
+
+def has_dropbox_token() -> bool:
+    return bool(st.secrets.get("DROPBOX_TOKEN", "").strip())
+
+def normalize_phone(phone: str) -> str:
+    phone = (phone or "").strip()
+    phone = re.sub(r"[^\d+]", "", phone)
+    return phone
+
+def safe_slug(text: str) -> str:
+    text = (text or "").strip()
+    text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
+    return text[:60] if text else "user"
+
+@st.cache_resource
+def google_sheet():
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
+
+    # Corrigir private_key caso venha com \n (string literal)
+    pk = sa_info.get("private_key", "")
+    if "\\n" in pk:
+        sa_info["private_key"] = pk.replace("\\n", "\n")
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
+
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(st.secrets["SHEET_ID"])
+    return sh.sheet1
+
+def ensure_headers(ws):
+    wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
+    headers = ws.row_values(1)
+    if headers != wanted:
+        ws.clear()
+        ws.append_row(wanted)
+    return wanted
+
+def append_to_sheet(row: dict):
+    ws = google_sheet()
+    ensure_headers(ws)
+    ws.append_row([
+        row.get("torneio_id",""),
+        row.get("torneio_nome",""),
+        row.get("timestamp",""),
+        row.get("nome",""),
+        row.get("telefone",""),
+        row.get("foto_url",""),
+        row.get("storage","dropbox"),
+    ])
+
+def read_sheet() -> pd.DataFrame:
+    ws = google_sheet()
+    values = ws.get_all_values()
+    if len(values) <= 1:
+        cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(values[1:], columns=values[0])
+
+def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
+    """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
+    import dropbox
+    from dropbox.files import WriteMode
+    from dropbox.sharing import SharedLinkSettings
+    from dropbox.exceptions import ApiError
+
+    token = st.secrets["DROPBOX_TOKEN"].strip()
+    dbx = dropbox.Dropbox(token)
+
+    base = DROPBOX_BASE_PATH.rstrip("/")
+    folder_path = f"{base}/{torneio_id}"
+
+    # Garante que as pastas existem (ignora se já existirem)
+    try:
+        dbx.files_create_folder_v2(base)
+    except Exception:
+        pass
+    try:
+        dbx.files_create_folder_v2(folder_path)
+    except Exception:
+        pass
+
+    dropbox_path = f"{folder_path}/{filename}"
+
+    dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
+
+    # criar link (se já existir, reaproveita)
+    try:
+        link_meta = dbx.sharing_create_shared_link_with_settings(
+            dropbox_path,
+            settings=SharedLinkSettings()
+        )
+        url = link_meta.url
+    except ApiError as e:
+        if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
+            links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
+            url = links[0].url
+        else:
+            raise
+
+    return url.replace("?dl=0", "?raw=1")
+
+def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
+    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    telefone_norm = normalize_phone(telefone)
+
+    file_bytes = foto.getvalue()
+    ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
+    filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+
+    foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
+
+    row = {
+        "torneio_id": torneio["id"],
+        "torneio_nome": torneio["nome"],
+        "timestamp": ts,
+        "nome": nome.strip(),
+        "telefone": telefone_norm,
+        "foto_url": foto_url,
+        "storage": "dropbox",
+    }
+    append_to_sheet(row)
+
 # -------------------------------------------------
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
 # ✅ Rankings fica imediatamente ao lado de Pontos
@@ -1299,151 +1447,9 @@ with tab_tour:
         text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
         return text[:60] if text else "user"
 
-    # =============================
-    # STORAGE
-    # - Dados: Google Sheets (via Service Account)
-    # - Fotos: Dropbox (Full Dropbox) ✅ persistente (não perde em reboot)
-    #
-    # Requisitos:
-    #   - requirements.txt: dropbox, gspread, google-auth
-    #   - secrets.toml: DROPBOX_TOKEN, SHEET_ID, [GCP_SERVICE_ACCOUNT]
-    # =============================
+    # (helpers de storage definidos fora desta tab)
 
-    DROPBOX_BASE_PATH = "/Torneios/Fotos"  # <- muda aqui se quiseres outra pasta
-
-    def has_google_secrets() -> bool:
-        return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
-
-    def has_dropbox_token() -> bool:
-        return bool(st.secrets.get("DROPBOX_TOKEN", "").strip())
-
-@st.cache_resource
-def google_sheet():
-    import gspread
-    from google.oauth2.service_account import Credentials
-
-    sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
-
-    # Corrigir private_key caso venha com \\n
-    pk = sa_info.get("private_key", "")
-    if "\\n" in pk:
-        sa_info["private_key"] = pk.replace("\\n", "\n")
-
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-    ]
-
-    creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(st.secrets["SHEET_ID"])
-    return sh.sheet1
-
-
-def ensure_headers(ws):
-    wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-    headers = ws.row_values(1)
-    if headers != wanted:
-        ws.clear()
-        ws.append_row(wanted)
-    return wanted
-
-    def ensure_headers(ws):
-        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-        headers = ws.row_values(1)
-        if headers != wanted:
-            # só inicializa se estiver vazia OU for diferente (evita misturas)
-            ws.clear()
-            ws.append_row(wanted)
-        return wanted
-
-    def append_to_sheet(row: dict):
-        ws = google_sheet()
-        ensure_headers(ws)
-        ws.append_row([
-            row.get("torneio_id",""),
-            row.get("torneio_nome",""),
-            row.get("timestamp",""),
-            row.get("nome",""),
-            row.get("telefone",""),
-            row.get("foto_url",""),
-            row.get("storage","dropbox"),
-        ])
-
-    def read_sheet() -> pd.DataFrame:
-        ws = google_sheet()
-        values = ws.get_all_values()
-        if len(values) <= 1:
-            cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-            return pd.DataFrame(columns=cols)
-        return pd.DataFrame(values[1:], columns=values[0])
-
-    def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
-        """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
-        import dropbox
-        from dropbox.files import WriteMode
-        from dropbox.sharing import SharedLinkSettings
-        from dropbox.exceptions import ApiError
-
-        token = st.secrets["DROPBOX_TOKEN"].strip()
-        dbx = dropbox.Dropbox(token)
-
-        # garante pastas (ignora se já existirem)
-        base = DROPBOX_BASE_PATH.rstrip("/")
-        folder_path = f"{base}/{torneio_id}"
-        try:
-            dbx.files_create_folder_v2(base)
-        except Exception:
-            pass
-        try:
-            dbx.files_create_folder_v2(folder_path)
-        except Exception:
-            pass
-
-        dropbox_path = f"{folder_path}/{filename}"
-
-        dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
-
-        # criar link (se já existir, reaproveita)
-        try:
-            link_meta = dbx.sharing_create_shared_link_with_settings(
-                dropbox_path,
-                settings=SharedLinkSettings()
-            )
-            url = link_meta.url
-        except ApiError as e:
-            if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
-                links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
-                url = links[0].url
-            else:
-                raise
-
-        return url.replace("?dl=0", "?raw=1")
-
-    def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
-        ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        telefone_norm = normalize_phone(telefone)
-
-        file_bytes = foto.getvalue()
-        ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
-        filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
-
-        foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
-
-        row = {
-            "torneio_id": torneio["id"],
-            "torneio_nome": torneio["nome"],
-            "timestamp": ts,
-            "nome": nome.strip(),
-            "telefone": telefone_norm,
-            "foto_url": foto_url,
-            "storage": "dropbox",
-        }
-        append_to_sheet(row)
-
-    # =============================
-    # SUB-TABS dentro de Torneios
-    # =============================
-    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
+    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
 
     # ---- Sub-tab: Cards de torneios
     with sub_tours:
