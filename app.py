@@ -1282,85 +1282,51 @@ with tab_tour:
         phone = re.sub(r"[^\d+]", "", phone)
         return phone
 
-    def safe_slug(text: str) -> str:
-        text = (text or "").strip()
-        text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
-        return text[:60] if text else "user"
-
     # =============================
-    # STORAGE: Google (recomendado) + fallback local
+    # STORAGE: Google Sheets (persistente)
+    # Nota: guardar fotos no Drive com Service Account pode falhar por quota.
+    #       Para já guardamos a foto em base64 na própria Sheet (simples e funciona já).
     # =============================
-    LOCAL_CSV = "inscricoes.csv"
-LOCAL_PHOTOS_DIR = "fotos"
+    def has_google_secrets() -> bool:
+        return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
 
-def has_google_secrets() -> bool:
-    return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID", "DRIVE_FOLDER_ID"])
+    @st.cache_resource
+    def google_sheet_client():
+        import gspread
+        from google.oauth2.service_account import Credentials
 
-@st.cache_resource
-def google_clients():
-    import gspread
-    from google.oauth2.service_account import Credentials
-    from googleapiclient.discovery import build
+        sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # secção TOML
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
+        return gspread.authorize(creds)
 
-    sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])  # <-- importante com TOML section
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
-    gc = gspread.authorize(creds)
-    drive = build("drive", "v3", credentials=creds)
-    return gc, drive
-
-def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str) -> dict:
-    from googleapiclient.http import MediaIoBaseUpload
-    import io  # se não tiveres import io no topo
-
-    folder_id = st.secrets["DRIVE_FOLDER_ID"]
-
-    media = MediaIoBaseUpload(
-        io.BytesIO(file_bytes),
-        mimetype=mimetype,
-        resumable=False
-    )
-
-    file_metadata = {
-        "name": filename,
-        "parents": [folder_id]
-    }
-
-    created = drive.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields="id,name,webViewLink",
-        supportsAllDrives=True
-    ).execute()
-
-    return created
-
-
-    def append_to_sheet(gc, row: dict):
-        sh = gc.open_by_key(st.secrets["SHEET_ID"])
-        ws = sh.sheet1
+    def _ensure_sheet(ws):
+        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_mime","foto_b64","storage"]
         headers = ws.row_values(1)
-        wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","drive_file_id","drive_link","foto_nome","storage"]
         if headers != wanted:
             ws.clear()
             ws.append_row(wanted)
+        return wanted
+
+    def append_to_sheet(row: dict):
+        gc = google_sheet_client()
+        sh = gc.open_by_key(st.secrets["SHEET_ID"])
+        ws = sh.sheet1
+        _ensure_sheet(ws)
 
         ws.append_row([
-            row["torneio_id"],
-            row["torneio_nome"],
-            row["timestamp"],
-            row["nome"],
-            row["telefone"],
-            row.get("drive_file_id",""),
-            row.get("drive_link",""),
-            row.get("foto_nome",""),
-            row.get("storage","google"),
+            row.get("torneio_id",""),
+            row.get("torneio_nome",""),
+            row.get("timestamp",""),
+            row.get("nome",""),
+            row.get("telefone",""),
+            row.get("foto_mime",""),
+            row.get("foto_b64",""),
+            row.get("storage","sheet_b64"),
         ])
 
-    def read_sheet(gc) -> pd.DataFrame:
+    def read_sheet() -> pd.DataFrame:
+        gc = google_sheet_client()
         sh = gc.open_by_key(st.secrets["SHEET_ID"])
         ws = sh.sheet1
         values = ws.get_all_values()
@@ -1368,37 +1334,13 @@ def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str
             return pd.DataFrame(columns=values[0] if values else [])
         return pd.DataFrame(values[1:], columns=values[0])
 
-    def local_save(row: dict, foto_bytes: bytes, ext: str):
-        os.makedirs(LOCAL_PHOTOS_DIR, exist_ok=True)
-        filename = f"{row['torneio_id']}_{safe_slug(row['nome'])}_{int(dt.datetime.now().timestamp())}.{ext}"
-        path = os.path.join(LOCAL_PHOTOS_DIR, filename)
-        with open(path, "wb") as f:
-            f.write(foto_bytes)
-
-        row["foto_nome"] = filename
-        row["storage"] = "local"
-        row["drive_link"] = path  # path local
-
-        df_new = pd.DataFrame([row])
-        if os.path.exists(LOCAL_CSV):
-            df = pd.read_csv(LOCAL_CSV)
-            df = pd.concat([df, df_new], ignore_index=True)
-        else:
-            df = df_new
-        df.to_csv(LOCAL_CSV, index=False)
-
-    def local_read() -> pd.DataFrame:
-        if os.path.exists(LOCAL_CSV):
-            return pd.read_csv(LOCAL_CSV)
-        return pd.DataFrame(columns=["torneio_id","torneio_nome","timestamp","nome","telefone","drive_file_id","drive_link","foto_nome","storage"])
-
     def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
         ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         telefone_norm = normalize_phone(telefone)
 
         file_bytes = foto.getvalue()
-        ext = foto.name.split(".")[-1].lower()
         mimetype = foto.type or "image/jpeg"
+        foto_b64 = base64.b64encode(file_bytes).decode("utf-8")
 
         row = {
             "torneio_id": torneio["id"],
@@ -1406,23 +1348,15 @@ def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str
             "timestamp": ts,
             "nome": nome.strip(),
             "telefone": telefone_norm,
-            "drive_file_id": "",
-            "drive_link": "",
-            "foto_nome": "",
-            "storage": "",
+            "foto_mime": mimetype,
+            "foto_b64": foto_b64,
+            "storage": "sheet_b64",
         }
 
-        if has_google_secrets():
-            gc, drive = google_clients()
-            filename = f"{torneio['id']}_{safe_slug(nome)}_{int(dt.datetime.now().timestamp())}.{ext}"
-            created = upload_photo_to_drive(drive, file_bytes, filename, mimetype)
-            row["drive_file_id"] = created["id"]
-            row["drive_link"] = created.get("webViewLink", "")
-            row["foto_nome"] = created.get("name", filename)
-            row["storage"] = "google"
-            append_to_sheet(gc, row)
-        else:
-            local_save(row, file_bytes, ext)
+        if not has_google_secrets():
+            raise RuntimeError("Faltam secrets de Google Sheets (GCP_SERVICE_ACCOUNT e SHEET_ID).")
+
+        append_to_sheet(row)
 
     # =============================
     # SUB-TABS dentro de Torneios
@@ -1480,16 +1414,14 @@ def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str
                         save_inscricao(torneio, nome, telefone_norm, foto)
                         ga_event("torneio_signup_submit", {"torneio_id": torneio["id"]})
                         st.success("Inscrição submetida com sucesso ✅")
-
-                        if not has_google_secrets():
-                            st.warning("⚠️ Estás em modo local (CSV + pasta). No Streamlit Cloud isto pode não ser persistente. Recomendo Google Sheets/Drive.")
+                        st.caption("Nota: a foto fica guardada na Google Sheet (base64).")
                     except Exception as e:
                         st.error("Erro ao guardar inscrição.")
                         st.exception(e)
 
     # ---- Sub-tab: Organizador
     with sub_admin:
-        st.caption("Área privada do organizador: lista de inscritos e acesso às fotos.")
+        st.caption("Área privada do organizador: lista de inscritos e fotos.")
 
         admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
         if admin_pw is None:
@@ -1506,11 +1438,7 @@ def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str
                     st.error("Password inválida.")
         else:
             try:
-                if has_google_secrets():
-                    gc, _drive = google_clients()
-                    df_insc = read_sheet(gc)
-                else:
-                    df_insc = local_read()
+                df_insc = read_sheet()
             except Exception as e:
                 st.error("Erro ao ler inscrições.")
                 st.exception(e)
@@ -1519,6 +1447,7 @@ def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str
             if df_insc.empty:
                 st.info("Ainda não há inscrições.")
             else:
+                # filtrar por torneio
                 torneio_ids = sorted(df_insc["torneio_id"].astype(str).unique().tolist())
                 sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
 
@@ -1526,28 +1455,28 @@ def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str
                 if sel != "(Todos)":
                     view = view[view["torneio_id"].astype(str) == sel]
 
-                st.dataframe(view, use_container_width=True, hide_index=True)
+                st.dataframe(view.drop(columns=[c for c in ["foto_b64"] if c in view.columns]),
+                            use_container_width=True, hide_index=True)
 
                 st.markdown("### Fotos (últimas 12)")
                 tail = view.tail(12)
 
                 for _, r in tail.iterrows():
                     st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
-                    if str(r.get("storage","")) == "google":
-                        link = r.get("drive_link", "")
-                        if link:
-                            st.markdown(f"[Abrir foto no Drive]({link})")
+                    b64 = r.get("foto_b64", "")
+                    mime = r.get("foto_mime", "image/jpeg")
+                    if isinstance(b64, str) and b64.strip():
+                        try:
+                            st.image(base64.b64decode(b64), caption=mime, use_container_width=True)
+                        except Exception:
+                            st.caption("Não consegui mostrar esta foto (base64 inválido).")
                     else:
-                        path = r.get("drive_link", "")
-                        if isinstance(path, str) and os.path.exists(path):
-                            st.image(path, use_container_width=True)
-                        else:
-                            st.caption("Foto local não disponível (no Streamlit Cloud pode desaparecer).")
+                        st.caption("Sem foto.")
                     st.divider()
 
                 st.download_button(
                     "Download CSV (filtrado)",
-                    data=view.to_csv(index=False).encode("utf-8"),
+                    data=view.drop(columns=[c for c in ["foto_b64"] if c in view.columns]).to_csv(index=False).encode("utf-8"),
                     file_name="inscricoes_filtrado.csv",
                     mime="text/csv"
                 )
