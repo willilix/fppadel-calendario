@@ -1354,58 +1354,66 @@ with tab_tour:
             return pd.DataFrame(columns=cols)
         return pd.DataFrame(values[1:], columns=values[0])
 
-    def upload_photo_to_dropbox(file_bytes: bytes, filename: str) -> str:
-        """Upload para Dropbox (App Folder) e devolve URL direto (raw=1)."""
-        import dropbox
-        from dropbox.files import WriteMode
-        from dropbox.sharing import SharedLinkSettings
-        from dropbox.exceptions import ApiError
+    def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
+    """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
+    import dropbox
+    from dropbox.files import WriteMode
+    from dropbox.sharing import SharedLinkSettings
+    from dropbox.exceptions import ApiError
 
-        token = st.secrets["DROPBOX_TOKEN"].strip()
-        dbx = dropbox.Dropbox(token)
+    token = st.secrets["DROPBOX_TOKEN"].strip()
+    dbx = dropbox.Dropbox(token)
 
-        # Em App Folder, isto vai para /Apps/<NomeDaApp>/torneios/<filename>
-        dropbox_path = f"/torneios/{filename}"
+    # Pasta específica + subpasta por torneio
+    folder_path = f"/Torneios/Fotos/{torneio_id}"
+    try:
+        dbx.files_create_folder_v2(folder_path)
+    except ApiError:
+        # já existe (ou não precisa) -> seguimos
+        pass
 
-        dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
+    dropbox_path = f"{folder_path}/{filename}"
 
-        # criar link (se já existir, reaproveita)
-        try:
-            link_meta = dbx.sharing_create_shared_link_with_settings(
-                dropbox_path,
-                settings=SharedLinkSettings()
-            )
-            url = link_meta.url
-        except ApiError as e:
-            if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
-                links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
-                url = links[0].url
-            else:
-                raise
+    dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
 
-        # link direto para st.image
-        return url.replace("?dl=0", "?raw=1")
+    # criar link (se já existir, reaproveita)
+    try:
+        link_meta = dbx.sharing_create_shared_link_with_settings(
+            dropbox_path,
+            settings=SharedLinkSettings()
+        )
+        url = link_meta.url
+    except ApiError as e:
+        if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
+            links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
+            url = links[0].url
+        else:
+            raise
 
-    def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
-        ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        telefone_norm = normalize_phone(telefone)
+    return url.replace("?dl=0", "?raw=1")
 
-        file_bytes = foto.getvalue()
-        ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
-        filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
 
-        foto_url = upload_photo_to_dropbox(file_bytes, filename)
+def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
+    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    telefone_norm = normalize_phone(telefone)
 
-        row = {
-            "torneio_id": torneio["id"],
-            "torneio_nome": torneio["nome"],
-            "timestamp": ts,
-            "nome": nome.strip(),
-            "telefone": telefone_norm,
-            "foto_url": foto_url,
-            "storage": "dropbox",
-        }
-        append_to_sheet(row)
+    file_bytes = foto.getvalue()
+    ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
+    filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+
+    foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
+
+    row = {
+        "torneio_id": torneio["id"],
+        "torneio_nome": torneio["nome"],
+        "timestamp": ts,
+        "nome": nome.strip(),
+        "telefone": telefone_norm,
+        "foto_url": foto_url,
+        "storage": "dropbox",
+    }
+    append_to_sheet(row)
+
 
 
     # =============================
