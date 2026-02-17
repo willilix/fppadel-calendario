@@ -1036,9 +1036,14 @@ def google_spreadsheet():
     return gc.open_by_key(st.secrets["SHEET_ID"])
 
 
+def google_ws(name: str):
+    """Abre uma worksheet pelo nome (ex: 'inscricoes', 'Torneios')."""
+    return google_spreadsheet().worksheet(name)
+
+
 def google_sheet():
     # Mantém compatibilidade com inscrições
-    return google_spreadsheet().worksheet("inscricoes")  # ⚠️ confirma se a aba das inscrições se chama Sheet1
+    return google_ws("inscricoes")
 
 def ensure_headers(ws):
     wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
@@ -1068,6 +1073,51 @@ def read_sheet() -> pd.DataFrame:
         cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
         return pd.DataFrame(columns=cols)
     return pd.DataFrame(values[1:], columns=values[0])
+
+
+def read_torneios() -> list[dict]:
+    """Lê a aba 'Torneios' da Google Sheet e devolve lista de torneios ativos."""
+    import gspread
+
+    try:
+        ws = google_ws("Torneios")
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("A aba 'Torneios' não existe na Google Sheet.")
+        return []
+
+    values = ws.get_all_values()
+    if len(values) <= 1:
+        return []
+
+    headers = values[0]
+    rows = values[1:]
+
+    torneios: list[dict] = []
+    for row in rows:
+        data = dict(zip(headers, row))
+
+        if str(data.get("ativo", "")).upper() != "TRUE":
+            continue
+
+        # vagas pode vir vazio
+        try:
+            vagas = int(data.get("vagas") or 0)
+        except Exception:
+            vagas = 0
+
+        torneios.append({
+            "id": data.get("id"),
+            "nome": data.get("nome"),
+            "data": data.get("data"),
+            "local": data.get("local"),
+            "descricao": data.get("descricao", ""),
+            "img": data.get("imagem_url"),
+            "vagas": vagas,
+        })
+
+    return torneios
+
+
 
 def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
     """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
@@ -1405,55 +1455,16 @@ with tab_tour:
     </div>
     """, unsafe_allow_html=True)
 
-    # =============================
-    # LISTA DE TORNEIOS (EDITA AQUI)
-    # =============================
-def read_torneios():
-    import gspread
-
-    # Abrir spreadsheet diretamente
-    ws_main = google_sheet()  # isto é sheet1
-    sh = ws_main.spreadsheet  # obter o spreadsheet completo
-
-    try:
-        ws = sh.worksheet("Torneios")
-    except gspread.exceptions.WorksheetNotFound:
-        st.error("A aba 'Torneios' não existe na Google Sheet.")
-        return []
-
-    values = ws.get_all_values()
-
-    if len(values) <= 1:
-        return []
-
-    headers = values[0]
-    rows = values[1:]
-
-    torneios = []
-    for row in rows:
-        data = dict(zip(headers, row))
-
-        if data.get("ativo", "").upper() != "TRUE":
-            continue
-
-        torneios.append({
-            "id": data.get("id"),
-            "nome": data.get("nome"),
-            "data": data.get("data"),
-            "local": data.get("local"),
-            "descricao": data.get("descricao", ""),
-            "img": data.get("imagem_url"),
-            "vagas": int(data.get("vagas") or 0)
-        })
-
-    return torneios
-
+    # -----------------
+    # Dados (Google Sheet)
+    # -----------------
+    TORNEIOS = read_torneios()
 
     # --------
     # Estado
     # --------
     if "torneio_sel" not in st.session_state:
-        st.session_state.torneio_sel = TORNEIOS[0]["id"] if TORNEIOS else None
+        st.session_state.torneio_sel = (TORNEIOS[0]["id"] if TORNEIOS else None)
     if "admin_ok" not in st.session_state:
         st.session_state.admin_ok = False
 
@@ -1465,8 +1476,8 @@ def read_torneios():
             pass
 
     def get_torneio(tid: str):
-        for t in read_torneios():
-            if t["id"] == tid:
+        for t in TORNEIOS:
+            if str(t.get("id")) == str(tid):
                 return t
         return TORNEIOS[0] if TORNEIOS else None
 
@@ -1480,8 +1491,6 @@ def read_torneios():
         text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
         return text[:60] if text else "user"
 
-    # (helpers de storage definidos fora desta tab)
-
     sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
 
     # ---- Sub-tab: Cards de torneios
@@ -1489,26 +1498,35 @@ def read_torneios():
         st.caption("Escolhe um torneio e clica em **Inscrever**.")
 
         if not TORNEIOS:
-            st.warning("Ainda não tens torneios configurados.")
+            st.warning("Ainda não tens torneios configurados na aba 'Torneios'.")
+            st.info("Dica: cria uma aba chamada **Torneios** com colunas: id, nome, data, local, descricao, imagem_url, vagas, ativo (TRUE/FALSE).")
+
         else:
             cols = st.columns(3 if not is_mobile else 1)
             for i, t in enumerate(TORNEIOS):
                 with cols[i % len(cols)]:
-                    st.image(t["img"], use_container_width=True)
-                    st.markdown(f"**{t['nome']}**")
-                    st.caption(f"📅 {t['data']} · 📍 {t['local']}")
+                    img = (t.get("img") or "").strip()
+                    if img:
+                        try:
+                            st.image(img, use_container_width=True)
+                        except Exception:
+                            st.caption("(imagem indisponível)")
+                    st.markdown(f"**{t.get('nome','')}**")
+                    st.caption(f"📅 {t.get('data','')} · 📍 {t.get('local','')}")
                     if t.get("descricao"):
                         st.write(t["descricao"])
 
-                    if st.button("Inscrever", key=f"insc_{t['id']}"):
-                        st.session_state.torneio_sel = t["id"]
-                        _track("torneio_select", {"torneio_id": t["id"], "torneio_nome": t["nome"]})
-                        st.success(f"Torneio selecionado: {t['nome']}")
+                    if st.button("Inscrever", key=f"insc_{t.get('id')}"):
+                        st.session_state.torneio_sel = t.get("id")
+                        _track("torneio_select", {"torneio_id": t.get("id"), "torneio_nome": t.get("nome")})
+                        st.success(f"Torneio selecionado: {t.get('nome','')}")
                         st.info("Agora vai à sub-tab **Inscrição**.")
 
     # ---- Sub-tab: Formulário
     with sub_form:
-        if not has_google_secrets():
+        if not TORNEIOS:
+            st.warning("Ainda não há torneios ativos para inscrição.")
+        elif not has_google_secrets():
             st.error("Falta configurar `GCP_SERVICE_ACCOUNT` e `SHEET_ID` nos Secrets do Streamlit Cloud.")
         elif not has_dropbox_token():
             st.error("Falta configurar `DROPBOX_TOKEN` nos Secrets do Streamlit Cloud.")
@@ -1517,8 +1535,7 @@ def read_torneios():
             if not torneio:
                 st.warning("Sem torneio selecionado.")
             else:
-                st.markdown(f"**Torneio:** {torneio['nome']}  \n📅 {torneio['data']} · 📍 {torneio['local']}")
-
+                st.markdown(f"**Torneio:** {torneio.get('nome','')}  \n📅 {torneio.get('data','')} · 📍 {torneio.get('local','')}")
                 with st.form("form_inscricao", clear_on_submit=True):
                     nome = st.text_input("Nome completo")
                     telefone = st.text_input("Número de telefone")
@@ -1538,7 +1555,7 @@ def read_torneios():
                     else:
                         try:
                             save_inscricao(torneio, nome, telefone_norm, foto)
-                            _track("torneio_signup_submit", {"torneio_id": torneio["id"]})
+                            _track("torneio_signup_submit", {"torneio_id": torneio.get("id")})
                             st.success("Inscrição submetida com sucesso ✅")
                             st.caption("A foto foi enviada para o Dropbox (na pasta configurada).")
                         except Exception as e:
@@ -1577,6 +1594,11 @@ def read_torneios():
                     st.info("Ainda não há inscrições.")
                 else:
                     # filtro por torneio
+                    if "torneio_id" not in df_insc.columns:
+                        st.error("A Sheet 'inscricoes' não tem a coluna 'torneio_id'. Confere os headers.")
+                        st.dataframe(df_insc, use_container_width=True, hide_index=True)
+                        st.stop()
+
                     torneio_ids = sorted(df_insc["torneio_id"].astype(str).unique().tolist())
                     sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
 
@@ -1595,24 +1617,13 @@ def read_torneios():
 
                     for _, r in tail.iterrows():
                         st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
-                        foto_url = r.get("foto_url", "")
+                        foto_url = (r.get("foto_url", "") or "").strip()
                         if foto_url:
                             st.image(foto_url, use_container_width=True)
                             st.markdown(f"[Abrir no Dropbox]({foto_url})")
                         else:
                             st.caption("Sem foto_url guardado (verifica o upload para Dropbox).")
                         st.divider()
-
-                    st.download_button(
-                        "Download CSV (filtrado)",
-                        data=view.to_csv(index=False).encode("utf-8"),
-                        file_name="inscricoes_filtrado.csv",
-                        mime="text/csv"
-                    )
-
-            if st.button("Sair"):
-                st.session_state.admin_ok = False
-                st.rerun()
 
 
 with tab_pts:
