@@ -1449,7 +1449,7 @@ with tab_tour:
 
     # (helpers de storage definidos fora desta tab)
 
-    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
+    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
 
     # ---- Sub-tab: Cards de torneios
     with sub_tours:
