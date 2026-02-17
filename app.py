@@ -1000,8 +1000,6 @@ def compute_metrics(view):
 #   dropbox
 # =================================================
 
-st.write(read_torneios())
-
 DROPBOX_BASE_PATH = "/Torneios/Fotos"  # podes mudar no código (ou tornar secret se quiseres)
 
 def has_google_secrets() -> bool:
@@ -1408,7 +1406,18 @@ with tab_tour:
     # LISTA DE TORNEIOS (EDITA AQUI)
     # =============================
 def read_torneios():
-    ws = google_sheet().spreadsheet.worksheet("Torneios")
+    import gspread
+
+    # Abrir spreadsheet diretamente
+    ws_main = google_sheet()  # isto é sheet1
+    sh = ws_main.spreadsheet  # obter o spreadsheet completo
+
+    try:
+        ws = sh.worksheet("Torneios")
+    except gspread.exceptions.WorksheetNotFound:
+        st.error("A aba 'Torneios' não existe na Google Sheet.")
+        return []
+
     values = ws.get_all_values()
 
     if len(values) <= 1:
@@ -1429,11 +1438,13 @@ def read_torneios():
             "nome": data.get("nome"),
             "data": data.get("data"),
             "local": data.get("local"),
+            "descricao": data.get("descricao", ""),
             "img": data.get("imagem_url"),
             "vagas": int(data.get("vagas") or 0)
         })
 
     return torneios
+
 
     # --------
     # Estado
