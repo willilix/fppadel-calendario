@@ -1492,21 +1492,21 @@ with tab_tour:
         return text[:60] if text else "user"
 
     # ---- Sub-navegação (mostra 'Inscrição' só depois de escolher um torneio)
-        if "show_inscricao" not in st.session_state:
-            st.session_state.show_inscricao = False
-        if "tour_view" not in st.session_state:
-            st.session_state.tour_view = "🏆 Torneios"
+    if "show_inscricao" not in st.session_state:
+        st.session_state.show_inscricao = False
+    if "tour_view" not in st.session_state:
+        st.session_state.tour_view = "🏆 Torneios"
 
-        view_options = ["🏆 Torneios", "🔒 Organizador"]
-        if st.session_state.show_inscricao:
-            view_options.insert(1, "📝 Inscrição")
+    view_options = ["🏆 Torneios", "🔒 Organizador"]
+    if st.session_state.show_inscricao:
+        view_options.insert(1, "📝 Inscrição")
 
-        # Se a opção desapareceu, garantir que não fica selecionada
-        if st.session_state.tour_view not in view_options:
-            st.session_state.tour_view = "🏆 Torneios"
+    # Se a opção desapareceu, garantir que não fica selecionada
+    if st.session_state.tour_view not in view_options:
+        st.session_state.tour_view = "🏆 Torneios"
 
-        tour_view = st.radio("", view_options, horizontal=True, key="tour_view")
-        st.divider()
+    tour_view = st.radio("", view_options, horizontal=True, key="tour_view")
+    st.divider()
     # ---- Sub-tab: Cards de torneios
     if tour_view == "🏆 Torneios":
         st.caption("Escolhe um torneio e clica em **Inscrever**.")
