@@ -1325,7 +1325,7 @@ with tab_tour:
 
     sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
 
-    # 🔥 Normalizar private_key (corrige problema \\n vs \n)
+    # Normalizar private_key
     pk = sa_info.get("private_key", "")
     if "\\n" in pk:
         sa_info["private_key"] = pk.replace("\\n", "\n")
