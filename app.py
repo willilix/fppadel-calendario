@@ -1405,16 +1405,33 @@ with tab_tour:
     # =============================
     # LISTA DE TORNEIOS (EDITA AQUI)
     # =============================
-    TORNEIOS = [
-        {
-            "id": "T2026_001",
-            "nome": "Torneio Grupo do 60",
-            "data": "2026-03-14",
-            "local": "Lisboa",
-            "descricao": "Duplas • 1 set até 6 • TB no 6/6",
-            "img": "https://images.unsplash.com/photo-1521412644187-c49fa049e84d?w=1200",
-        },
-    ]
+def read_torneios():
+    ws = google_sheet().spreadsheet.worksheet("Torneios")
+    values = ws.get_all_values()
+
+    if len(values) <= 1:
+        return []
+
+    headers = values[0]
+    rows = values[1:]
+
+    torneios = []
+    for row in rows:
+        data = dict(zip(headers, row))
+
+        if data.get("ativo", "").upper() != "TRUE":
+            continue
+
+        torneios.append({
+            "id": data.get("id"),
+            "nome": data.get("nome"),
+            "data": data.get("data"),
+            "local": data.get("local"),
+            "img": data.get("imagem_url"),
+            "vagas": int(data.get("vagas") or 0)
+        })
+
+    return torneios
 
     # --------
     # Estado
@@ -1432,7 +1449,7 @@ with tab_tour:
             pass
 
     def get_torneio(tid: str):
-        for t in TORNEIOS:
+        for t in read_torneios():
             if t["id"] == tid:
                 return t
         return TORNEIOS[0] if TORNEIOS else None
