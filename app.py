@@ -1313,16 +1313,30 @@ with tab_tour:
         return gc, drive
 
     def upload_photo_to_drive(drive, file_bytes: bytes, filename: str, mimetype: str) -> dict:
-        from googleapiclient.http import MediaIoBaseUpload
-        folder_id = st.secrets["DRIVE_FOLDER_ID"]
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=False)
-        file_metadata = {"name": filename, "parents": [folder_id]}
-        created = drive.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields="id,name,webViewLink"
-        ).execute()
-        return created
+    from googleapiclient.http import MediaIoBaseUpload
+
+    folder_id = st.secrets["DRIVE_FOLDER_ID"]
+
+    media = MediaIoBaseUpload(
+        io.BytesIO(file_bytes),
+        mimetype=mimetype,
+        resumable=False
+    )
+
+    file_metadata = {
+        "name": filename,
+        "parents": [folder_id]
+    }
+
+    created = drive.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields="id,name,webViewLink",
+        supportsAllDrives=True
+    ).execute()
+
+    return created
+
 
     def append_to_sheet(gc, row: dict):
         sh = gc.open_by_key(st.secrets["SHEET_ID"])
