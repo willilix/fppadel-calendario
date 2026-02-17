@@ -1491,10 +1491,37 @@ with tab_tour:
         text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
         return text[:60] if text else "user"
 
-    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
+    # ---- Sub-navegação (mostra 'Inscrição' só depois de escolher um torneio)
+    if "show_inscricao" not in st.session_state:
+        st.session_state.show_inscricao = False
+    if "tour_view" not in st.session_state:
+        st.session_state.tour_view = "🏆 Torneios"
 
+    def go_to_inscricao(tid: str, tnome: str = ""):
+        st.session_state.torneio_sel = tid
+        st.session_state.show_inscricao = True
+        st.session_state.tour_view = "📝 Inscrição"
+        _track("torneio_select", {"torneio_id": tid, "torneio_nome": tnome or ""})
+
+    def go_to_torneios():
+        st.session_state.tour_view = "🏆 Torneios"
+
+    def close_inscricao():
+        st.session_state.show_inscricao = False
+        st.session_state.tour_view = "🏆 Torneios"
+
+    view_options = ["🏆 Torneios", "🔒 Organizador"]
+    if st.session_state.show_inscricao:
+        view_options.insert(1, "📝 Inscrição")
+
+    # Se a opção desapareceu, garantir que não fica selecionada
+    if st.session_state.tour_view not in view_options:
+        st.session_state.tour_view = "🏆 Torneios"
+
+    tour_view = st.radio("", view_options, horizontal=True, key="tour_view")
+    st.divider()
     # ---- Sub-tab: Cards de torneios
-    with sub_tours:
+    if tour_view == "🏆 Torneios":
         st.caption("Escolhe um torneio e clica em **Inscrever**.")
 
         if not TORNEIOS:
@@ -1516,14 +1543,21 @@ with tab_tour:
                     if t.get("descricao"):
                         st.write(t["descricao"])
 
-                    if st.button("Inscrever", key=f"insc_{t.get('id')}"):
-                        st.session_state.torneio_sel = t.get("id")
-                        _track("torneio_select", {"torneio_id": t.get("id"), "torneio_nome": t.get("nome")})
-                        st.success(f"Torneio selecionado: {t.get('nome','')}")
-                        st.info("Agora vai à sub-tab **Inscrição**.")
+                    st.button(
+                        "Inscrever",
+                        key=f"insc_{t.get('id')}",
+                        on_click=go_to_inscricao,
+                        args=(t.get("id"), t.get("nome")),
+                    )
 
     # ---- Sub-tab: Formulário
-    with sub_form:
+    if tour_view == "📝 Inscrição":
+        cols_nav = st.columns([1, 3])
+        with cols_nav[0]:
+            st.button("⬅️ Voltar", key="voltar_torneios", on_click=go_to_torneios)
+        with cols_nav[1]:
+            st.button("✖️ Fechar inscrição", key="fechar_inscricao", on_click=close_inscricao)
+        st.divider()
         if not TORNEIOS:
             st.warning("Ainda não há torneios ativos para inscrição.")
         elif not has_google_secrets():
@@ -1563,7 +1597,7 @@ with tab_tour:
                             st.exception(e)
 
     # ---- Sub-tab: Organizador
-    with sub_admin:
+    if tour_view == "🔒 Organizador":
         st.caption("Área privada do organizador: lista de inscritos e fotos.")
 
         admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
