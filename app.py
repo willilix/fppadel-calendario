@@ -12,6 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 import uuid
+import io
 
 # 👇 points calculator sub-app
 from points_calculator import render_points_calculator
