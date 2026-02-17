@@ -1345,16 +1345,16 @@ with tab_tour:
             row.get("foto_url",""),
             row.get("storage","dropbox"),
         ])
+def read_sheet() -> pd.DataFrame:
+    ws = google_sheet()
+    values = ws.get_all_values()
+    if len(values) <= 1:
+        cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(values[1:], columns=values[0])
 
-    def read_sheet() -> pd.DataFrame:
-        ws = google_sheet()
-        values = ws.get_all_values()
-        if len(values) <= 1:
-            cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-            return pd.DataFrame(columns=cols)
-        return pd.DataFrame(values[1:], columns=values[0])
 
-    def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
+def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
     """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
     import dropbox
     from dropbox.files import WriteMode
@@ -1364,19 +1364,16 @@ with tab_tour:
     token = st.secrets["DROPBOX_TOKEN"].strip()
     dbx = dropbox.Dropbox(token)
 
-    # Pasta específica + subpasta por torneio
     folder_path = f"/Torneios/Fotos/{torneio_id}"
     try:
         dbx.files_create_folder_v2(folder_path)
     except ApiError:
-        # já existe (ou não precisa) -> seguimos
         pass
 
     dropbox_path = f"{folder_path}/{filename}"
 
     dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
 
-    # criar link (se já existir, reaproveita)
     try:
         link_meta = dbx.sharing_create_shared_link_with_settings(
             dropbox_path,
