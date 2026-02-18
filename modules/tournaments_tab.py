@@ -40,6 +40,7 @@ def render_tournaments(is_mobile: bool):
         def ir_para_inscricao(tid):
             st.session_state.torneio_sel = tid
             st.session_state.tour_view = "inscricao"
+            st.session_state.main_tab = 1  # força Torneios
 
         cols = st.columns(3 if not is_mobile else 1)
         for i, t in enumerate(TORNEIOS):
