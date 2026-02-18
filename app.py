@@ -1527,11 +1527,20 @@ with tab_tour:
 
     TORNEIOS = read_torneios()
 
+    # 👇👇👇 METE AQUI 👇👇👇
+    def get_torneio(tid: str):
+        for t in TORNEIOS:
+            if str(t.get("id")) == str(tid):
+                return t
+        return None
+    # 👆👆👆 ATÉ AQUI 👆👆👆
+
     if "tour_view" not in st.session_state:
         st.session_state.tour_view = "lista"
 
     if "torneio_sel" not in st.session_state:
         st.session_state.torneio_sel = None
+
 
     # ------------------------
     # LISTA DE TORNEIOS
