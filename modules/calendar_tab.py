@@ -1,9 +1,30 @@
+from __future__ import annotations
+
 import os
 import datetime as dt
 from urllib.parse import urlparse, quote_plus
 
 import pandas as pd
 import streamlit as st
+
+
+def _fix_cross_month_end(df: pd.DataFrame, start_col: str = "Data_Inicio", end_col: str = "Data_Fim") -> pd.DataFrame:
+    """
+    Fix cases where the end date was parsed as earlier than the start date.
+    Typical when an event crosses months (e.g. 31/01 a 02/02) but the parser
+    assigns the end date to the same month as the start.
+    """
+    if start_col not in df.columns or end_col not in df.columns:
+        return df
+
+    mask = (
+        df[start_col].notna()
+        & df[end_col].notna()
+        & (df[end_col] < df[start_col])
+    )
+    if mask.any():
+        df.loc[mask, end_col] = df.loc[mask, end_col] + pd.DateOffset(months=1)
+    return df
 
 
 def render_calendar(
@@ -122,8 +143,13 @@ def render_calendar(
         # garantir datas como datetime (para filtros funcionarem)
         view["Data_Inicio"] = pd.to_datetime(view["Data_Inicio"], errors="coerce")
         view["Data_Fim"] = pd.to_datetime(view["Data_Fim"], errors="coerce")
+
+        # Se faltar Data_Fim (eventos 1 dia / parsing incompleto), assume igual a Data_Inicio
         view["Data_Fim"] = view["Data_Fim"].fillna(view["Data_Inicio"])
         view["Data_Inicio"] = view["Data_Inicio"].fillna(view["Data_Fim"])
+
+        # Corrige eventos a cruzar mês (ex.: 31/01 a 02/02)
+        view = _fix_cross_month_end(view)
 
         if mes_sel != "(Todos)":
             view = view[view["Mes"] == mes_sel]
@@ -153,10 +179,16 @@ def render_calendar(
         if search.strip():
             q = search.strip().lower()
             cols = ["Data (mês + dia)", "DIV", "Categorias", "Classe", "Local", "Mes"]
-            mask = False
+            mask_any = pd.Series(False, index=view.index)
             for col in cols:
-                mask = mask | view[col].astype(str).str.lower().str.contains(q, na=False)
-            view = view[mask]
+                if col in view.columns:
+                    mask_any = mask_any | view[col].astype(str).str.lower().str.contains(q, na=False)
+            view = view[mask_any]
+
+        # Ordenação cronológica (garante ordem correta dentro do mês)
+        if "Data_Inicio" in view.columns:
+            sort_cols = [c for c in ["Data_Inicio", "DIV", "Categorias"] if c in view.columns]
+            view = view.sort_values(sort_cols, na_position="last", kind="mergesort")
 
         # Metrics: total respeita filtros; "Este mês" e "Próximo" NÃO dependem do mês escolhido
         total = len(view)
@@ -166,13 +198,7 @@ def render_calendar(
         metrics_df["Data_Fim"] = pd.to_datetime(metrics_df["Data_Fim"], errors="coerce")
         metrics_df["Data_Fim"] = metrics_df["Data_Fim"].fillna(metrics_df["Data_Inicio"])
         metrics_df["Data_Inicio"] = metrics_df["Data_Inicio"].fillna(metrics_df["Data_Fim"])
-       # Se Data_Fim ficou antes de Data_Inicio, é quase sempre evento a cruzar mês (ex.: 31/01 a 02/02)
-        mask = (
-            metrics_df["Data_Inicio"].notna()
-            & metrics_df["Data_Fim"].notna()
-            & (metrics_df["Data_Fim"] < metrics_df["Data_Inicio"])
-        )
-        metrics_df.loc[mask, "Data_Fim"] = metrics_df.loc[mask, "Data_Fim"] + pd.DateOffset(months=1)
+        metrics_df = _fix_cross_month_end(metrics_df)
 
         # Próximo evento
         next_date = None
@@ -225,16 +251,6 @@ def render_calendar(
               <div class="hint">eventos a decorrer</div>
             </div>
             """, unsafe_allow_html=True)
-           
-        if "Data_Inicio" in view.columns:
-            view = view.sort_values(["Data_Inicio", "DIV"], na_position="last")
-        # Ordenação cronológica (garante ordem correta dentro do mês)
-if "Data_Inicio" in view.columns:
-    view = view.sort_values(
-        ["Data_Inicio", "DIV", "Categorias"],
-        na_position="last",
-        kind="mergesort",
-    )
 
         st.markdown("### Actividades")
 
