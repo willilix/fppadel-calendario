@@ -222,6 +222,9 @@ def render_calendar(
               <div class="hint">eventos a decorrer</div>
             </div>
             """, unsafe_allow_html=True)
+           
+        if "Data_Inicio" in view.columns:
+            view = view.sort_values(["Data_Inicio", "DIV"], na_position="last")
 
         st.markdown("### Actividades")
 
