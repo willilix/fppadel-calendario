@@ -381,8 +381,12 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_local_dash_org(row):
-    loc = str(row.get("Local_pdf") or "").strip()
-    org = str(row.get("Organizacao_pdf") or "").strip()
+    loc = row.get("Local_pdf")
+    org = row.get("Organizacao_pdf")
+
+    loc = "" if pd.isna(loc) else str(loc).strip()
+    org = "" if pd.isna(org) else str(org).strip()
+
     if loc and org:
         return f"{loc} - {org}"
     if loc:
