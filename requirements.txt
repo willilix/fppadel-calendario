@@ -6,3 +6,8 @@ unidecode
 pdfplumber
 pdfminer.six
 pillow
+gspread
+google-api-python-client
+google-auth
+dropbox
+
