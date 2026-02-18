@@ -312,6 +312,19 @@ div[data-baseweb="input"] > div { border-radius: 16px !important; }
     font-weight: 600;
 }
 
+/* Só botão primary (Inscrever) */
+.stButton button[kind="primary"] {
+    background: linear-gradient(135deg, #FF453A, #FF2D55) !important;
+    color: white !important;
+    border: none !important;
+    box-shadow: 0 8px 20px rgba(255,69,58,0.35);
+}
+
+.stButton button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #FF3B30, #FF375F) !important;
+    transform: translateY(-1px);
+}
+
 .stTabs [data-baseweb="tab-list"] { gap: 8px; }
 .stTabs [data-baseweb="tab"] {
     border-radius: 999px;
