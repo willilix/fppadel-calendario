@@ -122,6 +122,8 @@ def render_calendar(
         # garantir datas como datetime (para filtros funcionarem)
         view["Data_Inicio"] = pd.to_datetime(view["Data_Inicio"], errors="coerce")
         view["Data_Fim"] = pd.to_datetime(view["Data_Fim"], errors="coerce")
+        view["Data_Fim"] = view["Data_Fim"].fillna(view["Data_Inicio"])
+        view["Data_Inicio"] = view["Data_Inicio"].fillna(view["Data_Fim"])
 
         if mes_sel != "(Todos)":
             view = view[view["Mes"] == mes_sel]
@@ -162,6 +164,10 @@ def render_calendar(
         metrics_df = base.copy()
         metrics_df["Data_Inicio"] = pd.to_datetime(metrics_df["Data_Inicio"], errors="coerce")
         metrics_df["Data_Fim"] = pd.to_datetime(metrics_df["Data_Fim"], errors="coerce")
+       # Se faltar Data_Fim (eventos 1 dia / parsing incompleto), assume igual a Data_Inicio
+metrics_df["Data_Fim"] = metrics_df["Data_Fim"].fillna(metrics_df["Data_Inicio"])
+metrics_df["Data_Inicio"] = metrics_df["Data_Inicio"].fillna(metrics_df["Data_Fim"])
+
 
         # Próximo evento
         next_date = None
