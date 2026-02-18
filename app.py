@@ -71,6 +71,36 @@ def infer_year_from_pdf_url(pdf_url: str) -> int:
 
 
 # -------------------------------------------------
+# DATE RANGE PARSER (helper do calendário)
+# -------------------------------------------------
+def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
+    """Converte 'Dia' do PDF (ex: '3-5', '3 a 5', '3/5', '3') em (data_inicio, data_fim)"""
+    day_text = (day_text or "").strip().lower()
+    nums = [int(n) for n in re.findall(r"\d{1,2}", day_text)]
+    if not nums:
+        return None, None
+
+    d1 = min(nums)
+    d2 = max(nums)
+
+    def safe_date(d: int):
+        try:
+            return dt.date(year, month_num, d)
+        except Exception:
+            return None
+
+    start = safe_date(d1)
+    end = safe_date(d2)
+
+    # Se por alguma razão o fim ficar antes do início (caso raro), força para o início
+    if start and end and end < start:
+        end = start
+
+    return start, end
+
+
+
+# -------------------------------------------------
 # DISCOVER LATEST PDF
 # -------------------------------------------------
 @st.cache_data(ttl=86400)
