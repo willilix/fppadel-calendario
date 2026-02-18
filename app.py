@@ -8,6 +8,8 @@ import pandas as pd
 import pdfplumber
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
+import json
 from bs4 import BeautifulSoup
 
 from modules.ui import render_global_ui, init_mobile_detection
@@ -394,6 +396,65 @@ def build_local_dash_org(row):
     if org:
         return org
     return ""
+
+
+
+
+# -------------------------------------------------
+# RESTORE MAIN TAB AFTER RERUNS (Streamlit tabs reset to first tab)
+# -------------------------------------------------
+def _inject_main_tab_restorer():
+    tab = (st.query_params.get("tab") or "").lower()
+    label_map = {
+        "calendario": "📅 Calendário",
+        "torneios": "🎾 Torneios",
+        "pontos": "🧮 Pontos",
+        "ranking": "🏆 Rankings",
+        "rankings": "🏆 Rankings",
+    }
+    target_label = label_map.get(tab)
+    if not target_label:
+        return
+
+    label_json = json.dumps(target_label)
+
+    components.html(
+        f"""
+<script>
+(function() {{
+  const label = {label_json};
+  function clickTabByLabel() {{
+    const tabs = window.parent.document.querySelectorAll('[role="tab"]');
+    if (!tabs || !tabs.length) return false;
+    for (const t of tabs) {{
+      const txt = (t.innerText || '').trim();
+      if (txt === label) {{
+        t.click();
+        return true;
+      }}
+    }}
+    return false;
+  }}
+  let tries = 0;
+  const timer = setInterval(() => {{
+    tries += 1;
+    if (clickTabByLabel() || tries > 25) clearInterval(timer);
+  }}, 120);
+}})();
+</script>
+""",
+        height=0,
+    )
+
+
+# Se estivermos no fluxo de inscrição, fixa a tab principal em "Torneios"
+if st.session_state.get("tour_view") == "inscricao":
+    st.query_params["tab"] = "torneios"
+elif "tab" not in st.query_params:
+    # default: Calendário (não força nada)
+    pass
+
+_inject_main_tab_restorer()
 
 
 # -------------------------------------------------
