@@ -9,7 +9,6 @@ import pandas as pd
 import pdfplumber
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
 from modules.ui import render_global_ui, init_mobile_detection
@@ -39,7 +38,7 @@ is_mobile = init_mobile_detection()
 HOME_URL = "https://fppadel.pt/"
 MONTHS = [
     "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
-    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
+    "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
 ]
 MONTH_TO_NUM = {m.title(): i for i, m in enumerate(MONTHS, start=1)}
 
@@ -157,7 +156,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
             if not placed:
                 rows.append({"y": w["top"], "words": [w]})
         for r in rows:
-            r["words"] = sorted(r["words"], key=lambda x: x["x0"]) 
+            r["words"] = sorted(r["words"], key=lambda x: x["x0"])
         return rows
 
     rows_out = []
@@ -245,17 +244,19 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 classe = ""
                 class_start = None
 
+                # "A definir"
                 for i in range(max(0, class_end - 3), class_end):
                     if i + 1 < class_end and rest[i].lower() == "a" and rest[i + 1].lower().startswith("definir"):
                         classe = "A definir"
                         class_start = i
                         break
 
+                # Valor de classe (número)
                 if not classe:
                     for i in range(class_end - 1, -1, -1):
                         if looks_like_money(rest[i]):
                             class_start = i
-                            if i + 2 < class_end and rest[i + 1] == "/" and rest[i + 2][0].isalpha():
+                            if i + 2 < class_end and rest[i + 1] == "/" and rest[i + 2][:1].isalpha():
                                 classe = " ".join(rest[i:i + 3])
                             elif i + 1 < class_end and "/" in rest[i + 1]:
                                 classe = " ".join(rest[i:i + 2])
@@ -266,6 +267,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if class_start is None:
                     class_start = class_end
 
+                # Categorias
                 cat_start = None
                 for i, t in enumerate(rest):
                     if i >= class_start:
@@ -290,6 +292,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 actividade = " ".join(actividade_tokens).strip()
                 categorias = " ".join(categorias_tokens).strip()
 
+                # Local / Organização por coordenadas
                 local_col = ""
                 org_col = ""
                 if x_local is not None and x_org is not None:
@@ -304,15 +307,10 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     ]
                     local_col = " ".join(local_words).strip()
                     org_col = " ".join(org_words).strip()
-
                     if local_col.upper() == "LOCAL":
                         local_col = ""
                     if org_col.upper().startswith("ORGAN"):
                         org_col = ""
-                else:
-                    if euro_idx is not None and euro_idx + 1 < len(rest):
-                        local_col = rest[euro_idx + 1]
-                        org_col = " ".join(rest[euro_idx + 2:]).strip() if euro_idx + 2 < len(rest) else ""
 
                 month_title = current_month.title()
                 month_num = MONTH_TO_NUM.get(month_title)
@@ -320,19 +318,21 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                 if month_num:
                     start_date, end_date = parse_day_range_to_dates(day_text, month_num, year)
 
-                rows_out.append({
-                    "Mes": month_title,
-                    "Dia": day_text,
-                    "DIV": div,
-                    "Actividade": actividade,
-                    "Categorias": categorias,
-                    "Classe": classe,
-                    "Local_pdf": local_col,
-                    "Organizacao_pdf": org_col,
-                    "Data_Inicio": start_date,
-                    "Data_Fim": end_date,
-                    "Data (mês + dia)": f"{month_title} {day_text}",
-                })
+                rows_out.append(
+                    {
+                        "Mes": month_title,
+                        "Dia": day_text,
+                        "DIV": div,
+                        "Actividade": actividade,
+                        "Categorias": categorias,
+                        "Classe": classe,
+                        "Local_pdf": local_col,
+                        "Organizacao_pdf": org_col,
+                        "Data_Inicio": start_date,
+                        "Data_Fim": end_date,
+                        "Data (mês + dia)": f"{month_title} {day_text}",
+                    }
+                )
 
     df = pd.DataFrame(rows_out)
     if df.empty:
@@ -363,16 +363,23 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
                 .replace({"": pd.NA})
             )
 
-    key_cols = [c for c in [
-        "DIV", "Actividade", "Categorias", "Classe",
-        "Local_pdf", "Organizacao_pdf", "Data_Inicio", "Data_Fim"
-    ] if c in out.columns]
+    key_cols = [
+        c
+        for c in [
+            "DIV",
+            "Actividade",
+            "Categorias",
+            "Classe",
+            "Local_pdf",
+            "Organizacao_pdf",
+            "Data_Inicio",
+            "Data_Fim",
+        ]
+        if c in out.columns
+    ]
 
     if key_cols:
-        tmp = (
-            out[key_cols].astype("string").fillna("")
-            .agg("|".join, axis=1).str.lower()
-        )
+        tmp = out[key_cols].astype("string").fillna("").agg("|".join, axis=1).str.lower()
         out = out.loc[~tmp.duplicated(keep="first")].copy()
 
     return out
@@ -395,107 +402,27 @@ def build_local_dash_org(row):
 
 
 # -------------------------------------------------
-# TAB URL SYNC (no rerun) + RESTORE ON LOAD
+# NAVEGAÇÃO PRINCIPAL (compatível e estável)
 # -------------------------------------------------
-def _inject_tab_url_sync_and_restore():
-    label_to_slug = {
-        "📅 Calendário": "calendario",
-        "🎾 Torneios": "torneios",
-        "🧮 Pontos": "pontos",
-        "🏆 Rankings": "ranking",
-    }
-    slug_to_label = {v: k for k, v in label_to_slug.items()}
-    target = (st.query_params.get("tab") or "").lower()
-    target_label = slug_to_label.get(target)
+# Compatibilidade com restos antigos (ex.: tournaments_tab setava main_tab=1)
+_tab_map = {0: "📅 Calendário", 1: "🎾 Torneios", 2: "🧮 Pontos", 3: "🏆 Rankings"}
+if "main_view" not in st.session_state:
+    if "main_tab" in st.session_state and st.session_state.main_tab in _tab_map:
+        st.session_state.main_view = _tab_map.get(st.session_state.main_tab, "📅 Calendário")
+    else:
+        st.session_state.main_view = "📅 Calendário"
 
-    components.html(
-        f"""
-<script>
-(function() {{
-  const labelToSlug = {json.dumps(label_to_slug)};
-  const targetLabel = {json.dumps(target_label)};
-
-  function setUrlAndReload(slug) {{
-    try {{
-      const url = new URL(window.location.href);
-      url.searchParams.set("tab", slug);
-      // força reload completo para o backend ver os query params
-      window.location.href = url.toString();
-    }} catch(e) {{}}
-  }}
-
-  function clickTabByLabel(label) {{
-    if (!label) return;
-    const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
-    const btn = tabs.find(b => (b.innerText || '').trim() === label);
-    if (btn) btn.click();
-  }}
-
-  function bindTabs() {{
-    const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
-    tabs.forEach(btn => {{
-      if (btn.dataset.urlsync === "1") return;
-      btn.dataset.urlsync = "1";
-      btn.addEventListener('click', () => {{
-        const label = (btn.innerText || '').trim();
-        const slug = labelToSlug[label];
-        if (slug) {{
-          try {{ localStorage.setItem("active_tab", slug); }} catch(e) {{}}
-          // reload só quando estamos a mudar de tab (evita loops)
-          setTimeout(() => setUrlAndReload(slug), 10);
-        }}
-      }}, {{ passive: true }});
-    }});
-  }}
-
-  function restoreFromLocalStorageIfNoParam() {{
-    try {{
-      const url = new URL(window.location.href);
-      if (!url.searchParams.get("tab")) {{
-        const saved = localStorage.getItem("active_tab");
-        if (saved) {{
-          url.searchParams.set("tab", saved);
-          window.history.replaceState({{}}, "", url.toString());
-        }}
-      }}
-    }} catch(e) {{}}
-  }}
-
-  restoreFromLocalStorageIfNoParam();
-
-  // bind listeners (tabs render async)
-  bindTabs();
-  const obs = new MutationObserver(() => bindTabs());
-  obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
-
-  // restore tab from URL (if present)
-  if (targetLabel) {{
-    let tries = 0;
-    const timer = setInterval(() => {{
-      tries++;
-      clickTabByLabel(targetLabel);
-      if (tries > 20) clearInterval(timer);
-    }}, 120);
-  }}
-}})();
-</script>
-""",
-        height=0,
-    )
-
-
-_inject_tab_url_sync_and_restore()
-
-
-
-# -------------------------------------------------
-# MAIN TABS
-# -------------------------------------------------
-tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(
-    ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"]
+# Radio horizontal é o mais compatível com todas as versões de Streamlit
+main_view = st.radio(
+    "",
+    ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"],
+    key="main_view",
+    horizontal=True,
+    label_visibility="collapsed",
 )
 
-with tab_cal:
+# Render condicional (sem st.tabs) — NÃO SALTA em reruns
+if main_view == "📅 Calendário":
     render_calendar(
         find_latest_calendar_pdf_url=find_latest_calendar_pdf_url,
         infer_year_from_pdf_url=infer_year_from_pdf_url,
@@ -507,11 +434,11 @@ with tab_cal:
         is_mobile=is_mobile,
     )
 
-with tab_tour:
+elif main_view == "🎾 Torneios":
     render_tournaments(is_mobile=is_mobile)
 
-with tab_pts:
+elif main_view == "🧮 Pontos":
     render_points()
 
-with tab_rank:
+elif main_view == "🏆 Rankings":
     render_rankings()
