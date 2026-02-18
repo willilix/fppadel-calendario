@@ -164,12 +164,15 @@ def render_calendar(
         metrics_df = base.copy()
         metrics_df["Data_Inicio"] = pd.to_datetime(metrics_df["Data_Inicio"], errors="coerce")
         metrics_df["Data_Fim"] = pd.to_datetime(metrics_df["Data_Fim"], errors="coerce")
-
-        # Se faltar Data_Fim (eventos 1 dia / parsing incompleto), assume igual a Data_Inicio
         metrics_df["Data_Fim"] = metrics_df["Data_Fim"].fillna(metrics_df["Data_Inicio"])
         metrics_df["Data_Inicio"] = metrics_df["Data_Inicio"].fillna(metrics_df["Data_Fim"])
-
-
+       # Se Data_Fim ficou antes de Data_Inicio, é quase sempre evento a cruzar mês (ex.: 31/01 a 02/02)
+mask = (
+    metrics_df["Data_Inicio"].notna()
+    & metrics_df["Data_Fim"].notna()
+    & (metrics_df["Data_Fim"] < metrics_df["Data_Inicio"])
+)
+metrics_df.loc[mask, "Data_Fim"] = metrics_df.loc[mask, "Data_Fim"] + pd.DateOffset(months=1)
 
         # Próximo evento
         next_date = None
