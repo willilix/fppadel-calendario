@@ -1,3 +1,5 @@
+from modules.tournaments_tab import render_tournaments
+
 import os
 import re
 import base64
@@ -1259,130 +1261,7 @@ with tab_cal:
 # TORNEIOS TAB (cards + inscrição + organizador)
 # -------------------------------------------------
 with tab_tour:
-
-    st.markdown("""
-    <div class="topbar">
-      <div class="top-title">Torneios</div>
-      <div class="top-sub">Inscrições dentro da app • com foto • área do organizador</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    TORNEIOS = read_torneios()
-
-    # 👇👇👇 METE AQUI 👇👇👇
-    def get_torneio(tid: str):
-        for t in TORNEIOS:
-            if str(t.get("id")) == str(tid):
-                return t
-        return None
-    # 👆👆👆 ATÉ AQUI 👆👆👆
-
-    if "tour_view" not in st.session_state:
-        st.session_state.tour_view = "lista"
-
-    if "torneio_sel" not in st.session_state:
-        st.session_state.torneio_sel = None
-
-
-    # ------------------------
-    # LISTA DE TORNEIOS
-    # ------------------------
-    if st.session_state.tour_view == "lista":
-
-        if not TORNEIOS:
-            st.warning("Ainda não tens torneios configurados.")
-        else:
-
-            def ir_para_inscricao(tid):
-                st.session_state.torneio_sel = tid
-                st.session_state.tour_view = "inscricao"
-
-            cols = st.columns(3 if not is_mobile else 1)
-
-            for i, t in enumerate(TORNEIOS):
-                with cols[i % len(cols)]:
-
-                    if t.get("img"):
-                        st.image(t["img"], use_container_width=True)
-
-                    st.markdown(f"**{t['nome']}**")
-                    st.caption(f"📅 {t['data']} · 📍 {t['local']}")
-
-                    st.button(
-                        "Inscrever",
-                        key=f"insc_{t['id']}",
-                        on_click=ir_para_inscricao,
-                        args=(t["id"],)
-                    )
-
-    # ------------------------
-    # FORMULÁRIO DE INSCRIÇÃO
-    # ------------------------
-    elif st.session_state.tour_view == "inscricao":
-
-        torneio = get_torneio(st.session_state.torneio_sel)
-
-        if not torneio:
-            st.session_state.tour_view = "lista"
-            st.rerun()
-
-        st.markdown(f"## 📝 Inscrição — {torneio['nome']}")
-
-        if st.button("← Voltar"):
-            st.session_state.tour_view = "lista"
-            st.session_state.torneio_sel = None
-            st.rerun()
-
-        with st.form("form_inscricao", clear_on_submit=True):
-            nome = st.text_input("Nome completo")
-            telefone = st.text_input("Número de telefone")
-            foto = st.file_uploader("Fotografia", type=["jpg", "jpeg", "png"])
-            ok = st.form_submit_button("Submeter inscrição")
-
-        if ok:
-            nome = (nome or "").strip()
-            telefone_norm = normalize_phone(telefone)
-
-            if not nome:
-                st.error("Falta o nome.")
-            elif not telefone_norm:
-                st.error("Falta o número de telefone.")
-            elif foto is None:
-                st.error("Falta a fotografia.")
-            else:
-                try:
-                    save_inscricao(torneio, nome, telefone_norm, foto)
-                    st.success("Inscrição submetida com sucesso ✅")
-                except Exception as e:
-                    st.error("Erro ao guardar inscrição.")
-                    st.exception(e)
-
-    # ------------------------
-    # ORGANIZADOR
-    # ------------------------
-    st.divider()
-    st.markdown("### 🔒 Área do Organizador")
-
-    admin_pw = st.secrets.get("ADMIN_PASSWORD")
-
-    if "admin_ok" not in st.session_state:
-        st.session_state.admin_ok = False
-
-    if not st.session_state.admin_ok:
-        pw = st.text_input("Password", type="password")
-        if st.button("Entrar"):
-            if pw == admin_pw:
-                st.session_state.admin_ok = True
-                st.rerun()
-            else:
-                st.error("Password inválida.")
-    else:
-        df_insc = read_sheet()
-
-        if df_insc.empty:
-            st.info("Ainda não há inscrições.")
-        else:
-            st.dataframe(df_insc, use_container_width=True, hide_index=True)
+    render_tournaments(is_mobile=bool(st.session_state.get("is_mobile", False)))
 
 
 with tab_pts:
