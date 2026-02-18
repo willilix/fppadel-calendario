@@ -371,12 +371,24 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
             )
 
     key_cols = [c for c in [
-        "DIV", "Actividade", "Categorias", "Classe",
-        "Local_pdf", "Organizacao_pdf", "Data_Inicio", "Data_Fim"
+        "DIV",
+        "Actividade",
+        "Categorias",
+        "Classe",
+        "Local_pdf",
+        "Organizacao_pdf",
+        "Data_Inicio",
+        "Data_Fim",
     ] if c in out.columns]
 
     if key_cols:
-        tmp = out[key_cols].astype("string").fillna("").agg("|".join, axis=1).str.lower()
+        tmp = (
+            out[key_cols]
+            .astype("string")
+            .fillna("")
+            .agg("|".join, axis=1)
+            .str.lower()
+        )
         out = out.loc[~tmp.duplicated(keep="first")].copy()
 
     return out
