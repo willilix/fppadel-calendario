@@ -415,21 +415,17 @@ def _inject_tab_url_sync_and_restore():
   const labelToSlug = {json.dumps(label_to_slug)};
   const targetLabel = {json.dumps(target_label)};
 
-  function setUrl(slug) {{
+  function setUrlAndReload(slug) {{
     try {{
       const url = new URL(window.location.href);
       url.searchParams.set("tab", slug);
-      window.history.replaceState({{}}, "", url.toString());
+      // força reload completo para o backend ver os query params
+      window.location.href = url.toString();
     }} catch(e) {{}}
   }}
 
-  function getSelectedTabLabel() {{
-    const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
-    const active = tabs.find(b => b.getAttribute("aria-selected") === "true");
-    return active ? (active.innerText || "").trim() : null;
-  }}
-
   function clickTabByLabel(label) {{
+    if (!label) return;
     const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
     const btn = tabs.find(b => (b.innerText || '').trim() === label);
     if (btn) btn.click();
@@ -443,44 +439,42 @@ def _inject_tab_url_sync_and_restore():
       btn.addEventListener('click', () => {{
         const label = (btn.innerText || '').trim();
         const slug = labelToSlug[label];
-        if (slug) setUrl(slug);
+        if (slug) {{
+          try {{ localStorage.setItem("active_tab", slug); }} catch(e) {{}}
+          // reload só quando estamos a mudar de tab (evita loops)
+          setTimeout(() => setUrlAndReload(slug), 10);
+        }}
       }}, {{ passive: true }});
     }});
   }}
 
-  function ensureUrlHasTab() {{
-    const url = new URL(window.location.href);
-    if (!url.searchParams.get("tab")) {{
-      const label = getSelectedTabLabel();
-      const slug = label ? labelToSlug[label] : null;
-      if (slug) setUrl(slug);
-    }}
+  function restoreFromLocalStorageIfNoParam() {{
+    try {{
+      const url = new URL(window.location.href);
+      if (!url.searchParams.get("tab")) {{
+        const saved = localStorage.getItem("active_tab");
+        if (saved) {{
+          url.searchParams.set("tab", saved);
+          window.history.replaceState({{}}, "", url.toString());
+        }}
+      }}
+    }} catch(e) {{}}
   }}
 
-  // 1) bind listeners (retry because tabs render async)
+  restoreFromLocalStorageIfNoParam();
+
+  // bind listeners (tabs render async)
   bindTabs();
-  const obs = new MutationObserver(() => {{
-    bindTabs();
-    ensureUrlHasTab();
-  }});
+  const obs = new MutationObserver(() => bindTabs());
   obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
 
-  // 2) ensure URL has tab even without click
-  let tries = 0;
-  const t = setInterval(() => {{
-    tries++;
-    bindTabs();
-    ensureUrlHasTab();
-    if (tries > 25) clearInterval(t);
-  }}, 120);
-
-  // 3) restore from URL if present
+  // restore tab from URL (if present)
   if (targetLabel) {{
-    let rtries = 0;
-    const rt = setInterval(() => {{
-      rtries++;
+    let tries = 0;
+    const timer = setInterval(() => {{
+      tries++;
       clickTabByLabel(targetLabel);
-      if (rtries > 20) clearInterval(rt);
+      if (tries > 20) clearInterval(timer);
     }}, 120);
   }}
 }})();
@@ -490,8 +484,8 @@ def _inject_tab_url_sync_and_restore():
     )
 
 
-
 _inject_tab_url_sync_and_restore()
+
 
 
 # -------------------------------------------------
