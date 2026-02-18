@@ -60,9 +60,11 @@ def render_tournaments(is_mobile: bool):
                 st.button(
                     "Inscrever",
                     key=f"insc_{t.get('id')}",
+                    type="primary",  # 👈 adiciona isto
                     on_click=ir_para_inscricao,
                     args=(t.get("id"),),
                 )
+)
 
         st.divider()
 
