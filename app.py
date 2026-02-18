@@ -1,3 +1,6 @@
+from modules.points_tab import render_points
+from modules.rankings_tab import render_rankings
+
 from modules.calendar_tab import render_calendar
 
 from modules.tournaments_tab import render_tournaments
@@ -1031,12 +1034,11 @@ with tab_tour:
 
 
 with tab_pts:
-    render_points_calculator()
+    render_points()
 
 # -------------------------------------------------
 # RANKINGS TAB (link)
 # -------------------------------------------------
 with tab_rank:
-    st.subheader("Rankings (TieSports)")
-    st.caption("Abre o ranking no site oficial.")
-    st.link_button("🏆 Abrir Rankings", "https://tour.tiesports.com/fpp/weekly_rankings", use_container_width=True)
+    render_rankings()
+
