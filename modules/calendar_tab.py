@@ -228,6 +228,13 @@ def render_calendar(
            
         if "Data_Inicio" in view.columns:
             view = view.sort_values(["Data_Inicio", "DIV"], na_position="last")
+        # Ordenação cronológica (garante ordem correta dentro do mês)
+if "Data_Inicio" in view.columns:
+    view = view.sort_values(
+        ["Data_Inicio", "DIV", "Categorias"],
+        na_position="last",
+        kind="mergesort",
+    )
 
         st.markdown("### Actividades")
 
