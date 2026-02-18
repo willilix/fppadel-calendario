@@ -94,7 +94,6 @@ def render_staging_badge():
 # ----------------------------
 # GA4 (server-side pageview via MP)
 # ----------------------------
- (server-side pageview via MP)
 # ----------------------------
 def ga4_track_pageview():
     # evita enviar 20 eventos por causa dos reruns
