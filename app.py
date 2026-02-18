@@ -476,7 +476,56 @@ tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(
     ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"]
 )
 
+# --- manter tab após reruns (pontos/torneios/etc.) ---
+if "main_tab" not in st.session_state:
+    st.session_state.main_tab = 0  # 0=Calendário,1=Torneios,2=Pontos,3=Rankings
+
+
+def _inject_tab_restorer_js():
+    import json
+    qp = dict(st.query_params)
+    target = qp.get("tab", None)
+
+    label_map = {
+        "calendario": "📅 Calendário",
+        "torneios": "🎾 Torneios",
+        "pontos": "🧮 Pontos",
+        "ranking": "🏆 Rankings",
+    }
+
+    target_label = label_map.get(target, None)
+    if not target_label:
+        return
+
+    st.components.v1.html(
+        f"""
+        <script>
+        (function() {{
+          const label = {json.dumps(target_label)};
+          function clickTab() {{
+            const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
+            const btn = tabs.find(b => (b.innerText || '').trim() === label);
+            if (btn) btn.click();
+          }}
+          clickTab();
+          setTimeout(clickTab, 80);
+          setTimeout(clickTab, 220);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
+# chama uma vez por rerun
+_inject_tab_restorer_js()
+
+
+# --- Tabs principais ---
 with tab_cal:
+    st.session_state.main_tab = 0
+    st.query_params["tab"] = "calendario"
+
     render_calendar(
         find_latest_calendar_pdf_url=find_latest_calendar_pdf_url,
         infer_year_from_pdf_url=infer_year_from_pdf_url,
@@ -489,10 +538,19 @@ with tab_cal:
     )
 
 with tab_tour:
+    st.session_state.main_tab = 1
+    st.query_params["tab"] = "torneios"
+
     render_tournaments(is_mobile=is_mobile)
 
 with tab_pts:
+    st.session_state.main_tab = 2
+    st.query_params["tab"] = "pontos"
+
     render_points()
 
 with tab_rank:
+    st.session_state.main_tab = 3
+    st.query_params["tab"] = "ranking"
+
     render_rankings()
