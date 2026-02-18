@@ -562,5 +562,4 @@ def render_global_ui(icon_path: str = "icon.png", logo_path: str = "armadura.png
     render_premium_css()
     render_logo(logo_path)
     inject_ga_tag()
-    ga_install_tab_listeners_once()
     ga4_track_pageview()
