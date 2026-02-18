@@ -108,6 +108,38 @@ def read_torneios():
 # DROPBOX
 # =================================================
 
+def _get_dropbox_client():
+    """Cria um cliente Dropbox usando refresh token (não expira na prática)."""
+    import dropbox
+    from dropbox.exceptions import AuthError
+
+    refresh = (st.secrets.get("DROPBOX_REFRESH_TOKEN", "") or "").strip()
+    app_key = (st.secrets.get("DROPBOX_APP_KEY", "") or "").strip()
+    app_secret = (st.secrets.get("DROPBOX_APP_SECRET", "") or "").strip()
+
+    if not (refresh and app_key and app_secret):
+        st.error("Faltam secrets Dropbox: DROPBOX_REFRESH_TOKEN / DROPBOX_APP_KEY / DROPBOX_APP_SECRET")
+        return None
+
+    try:
+        dbx = dropbox.Dropbox(
+            oauth2_refresh_token=refresh,
+            app_key=app_key,
+            app_secret=app_secret,
+        )
+        # valida cedo (se houver problema de scopes/revogação dá logo erro)
+        dbx.users_get_current_account()
+        return dbx
+    except AuthError as e:
+        st.error("Dropbox: refresh token inválido/revogado ou sem permissões.")
+        st.exception(e)
+        return None
+    except Exception as e:
+        st.error("Dropbox: erro ao criar cliente com refresh token.")
+        st.exception(e)
+        return None
+
+
 def _ensure_dropbox_folder(dbx, path: str):
     """Cria pastas Dropbox de forma incremental (evita erro quando o pai não existe)."""
     import dropbox
@@ -132,39 +164,22 @@ def _ensure_dropbox_folder(dbx, path: str):
 
 def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str):
     """Faz upload para Dropbox e devolve (public_url, dropbox_path)."""
-    import dropbox
     from dropbox.files import WriteMode
     from dropbox.sharing import SharedLinkSettings
-    from dropbox.exceptions import ApiError, AuthError
+    from dropbox.exceptions import ApiError
 
-    token = (st.secrets.get("DROPBOX_TOKEN", "") or "").strip()
-    if not token:
-        st.error("DROPBOX_TOKEN não está definido em st.secrets.")
+    dbx = _get_dropbox_client()
+    if dbx is None:
         return "", ""
 
     try:
-        dbx = dropbox.Dropbox(token)
-        # Validar token cedo (gera AuthError imediatamente se for inválido/expirado)
-        try:
-            _ = dbx.users_get_current_account()
-        except AuthError as e:
-            st.error("Dropbox: token inválido/expirado ou sem permissões. Regera o token em Dropbox Developers e actualiza DROPBOX_TOKEN em st.secrets.")
-            st.exception(e)
-            return "", ""
-
-
         base = DROPBOX_BASE_PATH.rstrip("/")
         folder_path = f"{base}/{torneio_id}"
         dropbox_path = f"{folder_path}/{filename}"
 
         # garantir estrutura
-        try:
-            _ensure_dropbox_folder(dbx, base)
-            _ensure_dropbox_folder(dbx, folder_path)
-        except AuthError as e:
-            st.error("Dropbox: falha de autenticação ao criar pastas (token inválido/expirado?).")
-            st.exception(e)
-            return "", ""
+        _ensure_dropbox_folder(dbx, base)
+        _ensure_dropbox_folder(dbx, folder_path)
 
         # upload
         dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
@@ -184,10 +199,6 @@ def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str):
         public_url = url.replace("?dl=0", "?raw=1") if url else ""
         return public_url, dropbox_path
 
-    except AuthError as e:
-        st.error("Falha de autenticação no Dropbox (token inválido?).")
-        st.exception(e)
-        return "", ""
     except Exception as e:
         st.error("Erro inesperado no upload para Dropbox.")
         st.exception(e)
