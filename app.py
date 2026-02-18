@@ -1,15 +1,15 @@
 import os
 import re
+import json
 import datetime as dt
 from io import BytesIO
-from urllib.parse import urljoin, urlparse, quote_plus
+from urllib.parse import urljoin
 
 import pandas as pd
 import pdfplumber
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
-import json
 from bs4 import BeautifulSoup
 
 from modules.ui import render_global_ui, init_mobile_detection
@@ -37,8 +37,6 @@ is_mobile = init_mobile_detection()
 # CONSTANTS
 # -------------------------------------------------
 HOME_URL = "https://fppadel.pt/"
-WP_MEDIA_SEARCH = "https://fppadel.pt/wp-json/wp/v2/media"
-
 MONTHS = [
     "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
     "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
@@ -60,6 +58,7 @@ def _pick_highest_version(urls: list[str]) -> str:
     def score(u: str) -> int:
         m = re.search(r"-(\d+)\.pdf$", u)
         return int(m.group(1)) if m else -1
+
     urls = list(set(urls))
     urls.sort(key=lambda u: (score(u), u), reverse=True)
     return urls[0]
@@ -72,11 +71,8 @@ def infer_year_from_pdf_url(pdf_url: str) -> int:
     return dt.date.today().year
 
 
-# -------------------------------------------------
-# DATE RANGE PARSER (helper do calendário)
-# -------------------------------------------------
 def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
-    """Converte 'Dia' do PDF (ex: '3-5', '3 a 5', '3/5', '3') em (data_inicio, data_fim)"""
+    """Converte 'Dia' do PDF (ex: '3-5', '3 a 5', '3/5', '3') em (data_inicio, data_fim)."""
     day_text = (day_text or "").strip().lower()
     nums = [int(n) for n in re.findall(r"\d{1,2}", day_text)]
     if not nums:
@@ -94,12 +90,10 @@ def parse_day_range_to_dates(day_text: str, month_num: int, year: int):
     start = safe_date(d1)
     end = safe_date(d2)
 
-    # Se por alguma razão o fim ficar antes do início (caso raro), força para o início
     if start and end and end < start:
         end = start
 
     return start, end
-
 
 
 # -------------------------------------------------
@@ -110,7 +104,7 @@ def find_latest_calendar_pdf_url() -> str:
     try:
         html = requests.get(HOME_URL, timeout=20).text
         soup = BeautifulSoup(html, "html.parser")
-        candidates = []
+        candidates: list[str] = []
 
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
@@ -140,7 +134,7 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 
 
 # -------------------------------------------------
-# PARSER (robusto: LOCAL/ORGANIZAÇÃO por coordenadas)
+# PARSER (LOCAL/ORGANIZAÇÃO por coordenadas)
 # -------------------------------------------------
 @st.cache_data(ttl=86400)
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
@@ -163,7 +157,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
             if not placed:
                 rows.append({"y": w["top"], "words": [w]})
         for r in rows:
-            r["words"] = sorted(r["words"], key=lambda x: x["x0"])
+            r["words"] = sorted(r["words"], key=lambda x: x["x0"]) 
         return rows
 
     rows_out = []
@@ -330,7 +324,7 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
                     "Mes": month_title,
                     "Dia": day_text,
                     "DIV": div,
-                    "Actividade": actividade,  # mantido internamente (não mostramos)
+                    "Actividade": actividade,
                     "Categorias": categorias,
                     "Classe": classe,
                     "Local_pdf": local_col,
@@ -347,9 +341,9 @@ def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
     df = df[df["DIV"].isin(["ABS", "JOV"])].copy()
     df.drop_duplicates(inplace=True)
 
-    df["SortDate"] = df["Data_Inicio"].fillna(pd.Timestamp.max.date())
-    df.sort_values(["SortDate", "DIV", "Actividade"], inplace=True)
-    df.drop(columns=["SortDate"], inplace=True)
+    df["Data_Inicio_dt"] = pd.to_datetime(df["Data_Inicio"], errors="coerce")
+    df.sort_values(["Data_Inicio_dt", "DIV", "Actividade"], inplace=True, na_position="last")
+    df.drop(columns=["Data_Inicio_dt"], inplace=True)
     return df
 
 
@@ -362,8 +356,7 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
     for col in out.columns:
         if out[col].dtype == object:
             out[col] = (
-                out[col]
-                .astype("string")
+                out[col].astype("string")
                 .fillna("")
                 .str.replace(r"\s+", " ", regex=True)
                 .str.strip()
@@ -371,23 +364,14 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
             )
 
     key_cols = [c for c in [
-        "DIV",
-        "Actividade",
-        "Categorias",
-        "Classe",
-        "Local_pdf",
-        "Organizacao_pdf",
-        "Data_Inicio",
-        "Data_Fim",
+        "DIV", "Actividade", "Categorias", "Classe",
+        "Local_pdf", "Organizacao_pdf", "Data_Inicio", "Data_Fim"
     ] if c in out.columns]
 
     if key_cols:
         tmp = (
-            out[key_cols]
-            .astype("string")
-            .fillna("")
-            .agg("|".join, axis=1)
-            .str.lower()
+            out[key_cols].astype("string").fillna("")
+            .agg("|".join, axis=1).str.lower()
         )
         out = out.loc[~tmp.duplicated(keep="first")].copy()
 
@@ -410,48 +394,66 @@ def build_local_dash_org(row):
     return ""
 
 
-
-
 # -------------------------------------------------
-# RESTORE MAIN TAB AFTER RERUNS (Streamlit tabs reset to first tab)
+# TAB URL SYNC (no rerun) + RESTORE ON LOAD
 # -------------------------------------------------
-def _inject_main_tab_restorer():
-    tab = (st.query_params.get("tab") or "").lower()
-    label_map = {
-        "calendario": "📅 Calendário",
-        "torneios": "🎾 Torneios",
-        "pontos": "🧮 Pontos",
-        "ranking": "🏆 Rankings",
-        "rankings": "🏆 Rankings",
+def _inject_tab_url_sync_and_restore():
+    label_to_slug = {
+        "📅 Calendário": "calendario",
+        "🎾 Torneios": "torneios",
+        "🧮 Pontos": "pontos",
+        "🏆 Rankings": "ranking",
     }
-    target_label = label_map.get(tab)
-    if not target_label:
-        return
-
-    label_json = json.dumps(target_label)
+    slug_to_label = {v: k for k, v in label_to_slug.items()}
+    target = (st.query_params.get("tab") or "").lower()
+    target_label = slug_to_label.get(target)
 
     components.html(
         f"""
 <script>
 (function() {{
-  const label = {label_json};
-  function clickTabByLabel() {{
-    const tabs = window.parent.document.querySelectorAll('[role="tab"]');
-    if (!tabs || !tabs.length) return false;
-    for (const t of tabs) {{
-      const txt = (t.innerText || '').trim();
-      if (txt === label) {{
-        t.click();
-        return true;
-      }}
-    }}
-    return false;
+  const labelToSlug = {json.dumps(label_to_slug)};
+  const targetLabel = {json.dumps(target_label)};
+
+  function setUrl(slug) {{
+    try {{
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", slug);
+      window.history.replaceState({{}}, "", url.toString());
+    }} catch(e) {{}}
   }}
-  let tries = 0;
-  const timer = setInterval(() => {{
-    tries += 1;
-    if (clickTabByLabel() || tries > 25) clearInterval(timer);
-  }}, 120);
+
+  function clickTabByLabel(label) {{
+    const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
+    const btn = tabs.find(b => (b.innerText || '').trim() === label);
+    if (btn) btn.click();
+  }}
+
+  function bindTabs() {{
+    const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
+    tabs.forEach(btn => {{
+      if (btn.dataset.urlsync === "1") return;
+      btn.dataset.urlsync = "1";
+      btn.addEventListener('click', () => {{
+        const label = (btn.innerText || '').trim();
+        const slug = labelToSlug[label];
+        if (slug) setUrl(slug);
+      }}, {{ passive: true }});
+    }});
+  }}
+
+  bindTabs();
+  const obs = new MutationObserver(() => bindTabs());
+  obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
+
+  if (targetLabel) {{
+    let tries = 0;
+    const timer = setInterval(() => {{
+      tries++;
+      clickTabByLabel(targetLabel);
+      if (tries > 20) clearInterval(timer);
+    }}, 120);
+  }}
 }})();
 </script>
 """,
@@ -459,14 +461,7 @@ def _inject_main_tab_restorer():
     )
 
 
-# Se estivermos no fluxo de inscrição, fixa a tab principal em "Torneios"
-if st.session_state.get("tour_view") == "inscricao":
-    st.query_params["tab"] = "torneios"
-elif "tab" not in st.query_params:
-    # default: Calendário (não força nada)
-    pass
-
-_inject_main_tab_restorer()
+_inject_tab_url_sync_and_restore()
 
 
 # -------------------------------------------------
@@ -476,56 +471,7 @@ tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(
     ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"]
 )
 
-# --- manter tab após reruns (pontos/torneios/etc.) ---
-if "main_tab" not in st.session_state:
-    st.session_state.main_tab = 0  # 0=Calendário,1=Torneios,2=Pontos,3=Rankings
-
-
-def _inject_tab_restorer_js():
-    import json
-    qp = dict(st.query_params)
-    target = qp.get("tab", None)
-
-    label_map = {
-        "calendario": "📅 Calendário",
-        "torneios": "🎾 Torneios",
-        "pontos": "🧮 Pontos",
-        "ranking": "🏆 Rankings",
-    }
-
-    target_label = label_map.get(target, None)
-    if not target_label:
-        return
-
-    st.components.v1.html(
-        f"""
-        <script>
-        (function() {{
-          const label = {json.dumps(target_label)};
-          function clickTab() {{
-            const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
-            const btn = tabs.find(b => (b.innerText || '').trim() === label);
-            if (btn) btn.click();
-          }}
-          clickTab();
-          setTimeout(clickTab, 80);
-          setTimeout(clickTab, 220);
-        }})();
-        </script>
-        """,
-        height=0,
-    )
-
-
-# chama uma vez por rerun
-_inject_tab_restorer_js()
-
-
-# --- Tabs principais ---
 with tab_cal:
-    st.session_state.main_tab = 0
-    st.query_params["tab"] = "calendario"
-
     render_calendar(
         find_latest_calendar_pdf_url=find_latest_calendar_pdf_url,
         infer_year_from_pdf_url=infer_year_from_pdf_url,
@@ -538,19 +484,10 @@ with tab_cal:
     )
 
 with tab_tour:
-    st.session_state.main_tab = 1
-    st.query_params["tab"] = "torneios"
-
     render_tournaments(is_mobile=is_mobile)
 
 with tab_pts:
-    st.session_state.main_tab = 2
-    st.query_params["tab"] = "pontos"
-
     render_points()
 
 with tab_rank:
-    st.session_state.main_tab = 3
-    st.query_params["tab"] = "ranking"
-
     render_rankings()
