@@ -353,6 +353,65 @@ div[data-baseweb="input"] > div { border-radius: 16px !important; }
     border: 1px solid rgba(255,255,255,0.1);
     box-shadow: 0 18px 60px rgba(0,0,0,0.5);
 }
+/* ============================
+   NAV PRINCIPAL COMO "PÍLULA"
+   (st.radio horizontal)
+============================ */
+
+/* container */
+div[role="radiogroup"]{
+  display:flex !important;
+  gap: 10px !important;
+  align-items: center !important;
+  padding: 10px 12px !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.30) !important;
+  width: fit-content !important;
+  margin: 6px 0 22px 0 !important;
+}
+
+/* esconde bolinha */
+div[role="radiogroup"] input[type="radio"]{
+  display:none !important;
+}
+
+/* cada "tab" */
+div[role="radiogroup"] > label{
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  border-radius: 999px !important;
+  cursor: pointer !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  background: rgba(0,0,0,0.18) !important;
+  transition: all .16s ease !important;
+}
+
+/* texto */
+div[role="radiogroup"] > label p{
+  margin:0 !important;
+  font-weight: 700 !important;
+  opacity: .85 !important;
+}
+
+/* hover */
+div[role="radiogroup"] > label:hover{
+  background: rgba(255,255,255,0.08) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ativo */
+div[role="radiogroup"] > label:has(input:checked){
+  background: rgba(10,132,255,0.18) !important;
+  border-color: rgba(10,132,255,0.35) !important;
+  box-shadow: 0 10px 22px rgba(10,132,255,0.20) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked) p{
+  opacity: 1 !important;
+  color: rgba(255,255,255,0.98) !important;
+}
 
 </style>
         """,
