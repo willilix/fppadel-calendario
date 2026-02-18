@@ -1009,15 +1009,16 @@ tab_cal, tab_tour, tab_pts, tab_rank = st.tabs(["📅 Calendário", "🎾 Tornei
 # -------------------------------------------------
 with tab_cal:
     render_calendar(
-        find_latest_calendar_pdf_url,
-        infer_year_from_pdf_url,
-        download_pdf_bytes,
-        parse_calendar_pdf,
-        normalize_and_dedupe,
-        build_local_dash_org,
-        month_sort_key,
-        is_mobile,
+        find_latest_calendar_pdf_url=find_latest_calendar_pdf_url,
+        infer_year_from_pdf_url=infer_year_from_pdf_url,
+        download_pdf_bytes=download_pdf_bytes,
+        parse_calendar_pdf=parse_calendar_pdf,
+        normalize_and_dedupe=normalize_and_dedupe,
+        build_local_dash_org=build_local_dash_org,
+        month_sort_key=month_sort_key,
+        is_mobile=is_mobile,
     )
+
 # -------------------------------------------------
 # -------------------------------------------------
 # TORNEIOS TAB (cards + inscrição + organizador)
