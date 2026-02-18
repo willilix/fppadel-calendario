@@ -108,14 +108,217 @@ def download_pdf_bytes(pdf_url: str) -> bytes:
 
 
 # -------------------------------------------------
-# PARSER
+# PARSER (robusto: LOCAL/ORGANIZAÇÃO por coordenadas)
 # -------------------------------------------------
 @st.cache_data(ttl=86400)
 def parse_calendar_pdf(pdf_bytes: bytes, year: int) -> pd.DataFrame:
-    # mantém exatamente o teu parser atual
-    # (não alterei nada aqui para não introduzir bugs)
-    from modules.calendar_tab import parse_calendar_pdf as full_parser
-    return full_parser(pdf_bytes, year)
+    def looks_like_money(tok: str) -> bool:
+        return bool(re.fullmatch(r"[´']?\d{1,3}(?:\.\d{3})*(?:,\d+)?", tok))
+
+    def is_category_token(tok: str) -> bool:
+        return bool(re.fullmatch(r"(F|M|S)\d{1,2}", tok)) or tok in {"VET", "FIP"}
+
+    def group_words_into_rows(words, y_tol=3):
+        rows = []
+        for w in sorted(words, key=lambda x: (x["top"], x["x0"])):
+            placed = False
+            for r in rows:
+                if abs(w["top"] - r["y"]) <= y_tol:
+                    r["words"].append(w)
+                    r["y"] = (r["y"] * (len(r["words"]) - 1) + w["top"]) / len(r["words"])
+                    placed = True
+                    break
+            if not placed:
+                rows.append({"y": w["top"], "words": [w]})
+        for r in rows:
+            r["words"] = sorted(r["words"], key=lambda x: x["x0"])
+        return rows
+
+    rows_out = []
+    current_month = None
+
+    with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(use_text_flow=True) or []
+            if not words:
+                continue
+
+            line_rows = group_words_into_rows(words, y_tol=3)
+
+            x_local = None
+            x_org = None
+            for lr in line_rows:
+                line_text = " ".join(w["text"] for w in lr["words"]).strip()
+                up = line_text.upper()
+                if ("LOCAL" in up) and ("ORGAN" in up) and ("DIV" in up) and ("ACTIV" in up):
+                    for w in lr["words"]:
+                        t = w["text"].upper()
+                        if t == "LOCAL":
+                            x_local = w["x0"]
+                        if t.startswith("ORGAN"):
+                            x_org = w["x0"]
+
+            for lr in line_rows:
+                line_text = " ".join(w["text"] for w in lr["words"]).strip()
+                if not line_text:
+                    continue
+
+                up = line_text.upper()
+                if "MÊS" in up and "ACTIVIDADES" in up and "DIV" in up:
+                    continue
+                if up.startswith("CALEND"):
+                    continue
+
+                month_found = None
+                for m in MONTHS:
+                    if up == m:
+                        month_found = m
+                        break
+                    if up.startswith(m + " "):
+                        month_found = m
+                        line_text = line_text[len(m):].strip()
+                        break
+                if month_found:
+                    current_month = month_found
+                    if up == month_found:
+                        continue
+                if not current_month:
+                    continue
+
+                tokens = line_text.split()
+
+                div_idx = None
+                for i, t in enumerate(tokens):
+                    if t in ("ABS", "JOV"):
+                        div_idx = i
+                        break
+                if div_idx is None:
+                    continue
+                div = tokens[div_idx]
+
+                pre = tokens[:div_idx]
+                tipo_set = {"CIR", "FPP", "FOR", "INT"}
+                if len(pre) >= 2 and pre[-2] in tipo_set:
+                    day_text = " ".join(pre[:-2]).strip()
+                elif len(pre) >= 1 and pre[-1] in tipo_set:
+                    day_text = " ".join(pre[:-1]).strip()
+                else:
+                    day_text = " ".join(pre).strip()
+
+                rest = tokens[div_idx + 1:]
+                if not rest:
+                    continue
+
+                euro_idx = None
+                for i, t in enumerate(rest):
+                    if "€" in t:
+                        euro_idx = i
+                        break
+
+                class_end = euro_idx if euro_idx is not None else len(rest)
+                classe = ""
+                class_start = None
+
+                for i in range(max(0, class_end - 3), class_end):
+                    if i + 1 < class_end and rest[i].lower() == "a" and rest[i + 1].lower().startswith("definir"):
+                        classe = "A definir"
+                        class_start = i
+                        break
+
+                if not classe:
+                    for i in range(class_end - 1, -1, -1):
+                        if looks_like_money(rest[i]):
+                            class_start = i
+                            if i + 2 < class_end and rest[i + 1] == "/" and rest[i + 2][0].isalpha():
+                                classe = " ".join(rest[i:i + 3])
+                            elif i + 1 < class_end and "/" in rest[i + 1]:
+                                classe = " ".join(rest[i:i + 2])
+                            else:
+                                classe = rest[i]
+                            break
+
+                if class_start is None:
+                    class_start = class_end
+
+                cat_start = None
+                for i, t in enumerate(rest):
+                    if i >= class_start:
+                        break
+                    if is_category_token(t):
+                        cat_start = i
+                        break
+                    if t == "M" and i + 2 < len(rest) and rest[i + 1] == "&" and rest[i + 2] == "F":
+                        cat_start = i
+                        break
+
+                if cat_start is None:
+                    actividade_tokens = rest[:class_start]
+                    categorias_tokens = []
+                else:
+                    actividade_tokens = rest[:cat_start]
+                    categorias_tokens = rest[cat_start:class_start]
+
+                if actividade_tokens and actividade_tokens[-1] == "FPP":
+                    actividade_tokens = actividade_tokens[:-1]
+
+                actividade = " ".join(actividade_tokens).strip()
+                categorias = " ".join(categorias_tokens).strip()
+
+                local_col = ""
+                org_col = ""
+                if x_local is not None and x_org is not None:
+                    margin = 2.0
+                    local_words = [
+                        w["text"] for w in lr["words"]
+                        if (w["x0"] >= x_local - margin) and (w["x0"] < x_org - margin)
+                    ]
+                    org_words = [
+                        w["text"] for w in lr["words"]
+                        if (w["x0"] >= x_org - margin)
+                    ]
+                    local_col = " ".join(local_words).strip()
+                    org_col = " ".join(org_words).strip()
+
+                    if local_col.upper() == "LOCAL":
+                        local_col = ""
+                    if org_col.upper().startswith("ORGAN"):
+                        org_col = ""
+                else:
+                    if euro_idx is not None and euro_idx + 1 < len(rest):
+                        local_col = rest[euro_idx + 1]
+                        org_col = " ".join(rest[euro_idx + 2:]).strip() if euro_idx + 2 < len(rest) else ""
+
+                month_title = current_month.title()
+                month_num = MONTH_TO_NUM.get(month_title)
+                start_date, end_date = (None, None)
+                if month_num:
+                    start_date, end_date = parse_day_range_to_dates(day_text, month_num, year)
+
+                rows_out.append({
+                    "Mes": month_title,
+                    "Dia": day_text,
+                    "DIV": div,
+                    "Actividade": actividade,  # mantido internamente (não mostramos)
+                    "Categorias": categorias,
+                    "Classe": classe,
+                    "Local_pdf": local_col,
+                    "Organizacao_pdf": org_col,
+                    "Data_Inicio": start_date,
+                    "Data_Fim": end_date,
+                    "Data (mês + dia)": f"{month_title} {day_text}",
+                })
+
+    df = pd.DataFrame(rows_out)
+    if df.empty:
+        return df
+
+    df = df[df["DIV"].isin(["ABS", "JOV"])].copy()
+    df.drop_duplicates(inplace=True)
+
+    df["SortDate"] = df["Data_Inicio"].fillna(pd.Timestamp.max.date())
+    df.sort_values(["SortDate", "DIV", "Actividade"], inplace=True)
+    df.drop(columns=["SortDate"], inplace=True)
+    return df
 
 
 def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
