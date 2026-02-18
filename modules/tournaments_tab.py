@@ -7,7 +7,7 @@ def render_tournaments(is_mobile: bool):
     st.markdown("""
     <div class="topbar">
       <div class="top-title">Torneios</div>
-      <div class="top-sub">Inscrições dentro da app • com foto • área do organizador</div>
+      <div class="top-sub">Torneios activos</div>
     </div>
     """, unsafe_allow_html=True)
 
