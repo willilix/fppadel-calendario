@@ -1178,48 +1178,57 @@ def read_torneios() -> list[dict]:
 
 
 
-def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str:
-    """Upload para Dropbox (Full Dropbox) e devolve URL direto (raw=1)."""
+def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str | None:
     import dropbox
     from dropbox.files import WriteMode
     from dropbox.sharing import SharedLinkSettings
-    from dropbox.exceptions import ApiError
+    from dropbox.exceptions import ApiError, AuthError
 
-    token = st.secrets["DROPBOX_TOKEN"].strip()
-    dbx = dropbox.Dropbox(token)
+    token = st.secrets.get("DROPBOX_TOKEN", "").strip()
 
-    base = DROPBOX_BASE_PATH.rstrip("/")
-    folder_path = f"{base}/{torneio_id}"
+    if not token:
+        st.error("DROPBOX_TOKEN não configurado.")
+        return None
 
-    # Garante que as pastas existem (ignora se já existirem)
     try:
-        dbx.files_create_folder_v2(base)
-    except Exception:
-        pass
-    try:
-        dbx.files_create_folder_v2(folder_path)
-    except Exception:
-        pass
+        dbx = dropbox.Dropbox(token)
 
-    dropbox_path = f"{folder_path}/{filename}"
+        base = DROPBOX_BASE_PATH.rstrip("/")
+        folder_path = f"{base}/{torneio_id}"
+        dropbox_path = f"{folder_path}/{filename}"
 
-    dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
+        # cria pastas se não existirem
+        try:
+            dbx.files_create_folder_v2(base)
+        except Exception:
+            pass
+        try:
+            dbx.files_create_folder_v2(folder_path)
+        except Exception:
+            pass
 
-    # criar link (se já existir, reaproveita)
-    try:
-        link_meta = dbx.sharing_create_shared_link_with_settings(
-            dropbox_path,
-            settings=SharedLinkSettings()
-        )
-        url = link_meta.url
-    except ApiError as e:
-        if getattr(e, "error", None) and e.error.is_shared_link_already_exists():
-            links = dbx.sharing_list_shared_links(path=dropbox_path, direct_only=True).links
-            url = links[0].url
-        else:
-            raise
+        dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
 
-    return url.replace("?dl=0", "?raw=1")
+        try:
+            link_meta = dbx.sharing_create_shared_link_with_settings(
+                dropbox_path,
+                settings=SharedLinkSettings()
+            )
+            url = link_meta.url
+        except ApiError:
+            links = dbx.sharing_list_shared_links(path=dropbox_path).links
+            url = links[0].url if links else None
+
+        return url.replace("?dl=0", "?raw=1") if url else None
+
+    except AuthError:
+        st.error("Erro de autenticação Dropbox (token inválido ou expirado).")
+        return None
+
+    except Exception as e:
+        st.error("Erro inesperado no Dropbox.")
+        st.exception(e)
+        return None
 
 def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
     ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1508,6 +1517,7 @@ with tab_cal:
 # TORNEIOS TAB (cards + inscrição + organizador)
 # -------------------------------------------------
 with tab_tour:
+
     st.markdown("""
     <div class="topbar">
       <div class="top-title">Torneios</div>
@@ -1515,176 +1525,113 @@ with tab_tour:
     </div>
     """, unsafe_allow_html=True)
 
-    # -----------------
-    # Dados (Google Sheet)
-    # -----------------
     TORNEIOS = read_torneios()
 
-    # --------
-    # Estado
-    # --------
+    if "tour_view" not in st.session_state:
+        st.session_state.tour_view = "lista"
+
     if "torneio_sel" not in st.session_state:
-        st.session_state.torneio_sel = (TORNEIOS[0]["id"] if TORNEIOS else None)
+        st.session_state.torneio_sel = None
+
+    # ------------------------
+    # LISTA DE TORNEIOS
+    # ------------------------
+    if st.session_state.tour_view == "lista":
+
+        if not TORNEIOS:
+            st.warning("Ainda não tens torneios configurados.")
+        else:
+
+            def ir_para_inscricao(tid):
+                st.session_state.torneio_sel = tid
+                st.session_state.tour_view = "inscricao"
+
+            cols = st.columns(3 if not is_mobile else 1)
+
+            for i, t in enumerate(TORNEIOS):
+                with cols[i % len(cols)]:
+
+                    if t.get("img"):
+                        st.image(t["img"], use_container_width=True)
+
+                    st.markdown(f"**{t['nome']}**")
+                    st.caption(f"📅 {t['data']} · 📍 {t['local']}")
+
+                    st.button(
+                        "Inscrever",
+                        key=f"insc_{t['id']}",
+                        on_click=ir_para_inscricao,
+                        args=(t["id"],)
+                    )
+
+    # ------------------------
+    # FORMULÁRIO DE INSCRIÇÃO
+    # ------------------------
+    elif st.session_state.tour_view == "inscricao":
+
+        torneio = get_torneio(st.session_state.torneio_sel)
+
+        if not torneio:
+            st.session_state.tour_view = "lista"
+            st.rerun()
+
+        st.markdown(f"## 📝 Inscrição — {torneio['nome']}")
+
+        if st.button("← Voltar"):
+            st.session_state.tour_view = "lista"
+            st.session_state.torneio_sel = None
+            st.rerun()
+
+        with st.form("form_inscricao", clear_on_submit=True):
+            nome = st.text_input("Nome completo")
+            telefone = st.text_input("Número de telefone")
+            foto = st.file_uploader("Fotografia", type=["jpg", "jpeg", "png"])
+            ok = st.form_submit_button("Submeter inscrição")
+
+        if ok:
+            nome = (nome or "").strip()
+            telefone_norm = normalize_phone(telefone)
+
+            if not nome:
+                st.error("Falta o nome.")
+            elif not telefone_norm:
+                st.error("Falta o número de telefone.")
+            elif foto is None:
+                st.error("Falta a fotografia.")
+            else:
+                try:
+                    save_inscricao(torneio, nome, telefone_norm, foto)
+                    st.success("Inscrição submetida com sucesso ✅")
+                except Exception as e:
+                    st.error("Erro ao guardar inscrição.")
+                    st.exception(e)
+
+    # ------------------------
+    # ORGANIZADOR
+    # ------------------------
+    st.divider()
+    st.markdown("### 🔒 Área do Organizador")
+
+    admin_pw = st.secrets.get("ADMIN_PASSWORD")
+
     if "admin_ok" not in st.session_state:
         st.session_state.admin_ok = False
 
-    def _track(event_name: str, payload: dict | None = None):
-        """Chama ga_event se existir (não quebra a app se não existir)."""
-        try:
-            ga_event(event_name, payload or {})
-        except Exception:
-            pass
-
-    def get_torneio(tid: str):
-        for t in TORNEIOS:
-            if str(t.get("id")) == str(tid):
-                return t
-        return TORNEIOS[0] if TORNEIOS else None
-
-    def normalize_phone(phone: str) -> str:
-        phone = (phone or "").strip()
-        phone = re.sub(r"[^\d+]", "", phone)
-        return phone
-
-    def safe_slug(text: str) -> str:
-        text = (text or "").strip()
-        text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
-        return text[:60] if text else "user"
-
-    sub_tours, sub_form, sub_admin = st.tabs(["🏆 Torneios", "📝 Inscrição", "🔒 Organizador"])
-
-    # ---- Sub-tab: Cards de torneios
-    with sub_tours:
-        st.caption("Escolhe um torneio e clica em **Inscrever**.")
-
-        if not TORNEIOS:
-            st.warning("Ainda não tens torneios configurados na aba 'Torneios'.")
-            st.info("Dica: cria uma aba chamada **Torneios** com colunas: id, nome, data, local, descricao, imagem_url, vagas, ativo (TRUE/FALSE).")
-
-        else:
-            cols = st.columns(3 if not is_mobile else 1)
-            for i, t in enumerate(TORNEIOS):
-                with cols[i % len(cols)]:
-                    img = (t.get("img") or "").strip()
-                    if img:
-                        try:
-                            st.image(img, use_container_width=True)
-                        except Exception:
-                            st.caption("(imagem indisponível)")
-                    st.markdown(f"**{t.get('nome','')}**")
-                    st.caption(f"📅 {t.get('data','')} · 📍 {t.get('local','')}")
-                    if t.get("descricao"):
-                        st.write(t["descricao"])
-
-                    if st.button("Inscrever", key=f"insc_{t.get('id')}"):
-                        st.session_state.torneio_sel = t.get("id")
-                        _track("torneio_select", {"torneio_id": t.get("id"), "torneio_nome": t.get("nome")})
-                        st.success(f"Torneio selecionado: {t.get('nome','')}")
-                        st.info("Agora vai à sub-tab **Inscrição**.")
-
-    # ---- Sub-tab: Formulário
-    with sub_form:
-        if not TORNEIOS:
-            st.warning("Ainda não há torneios ativos para inscrição.")
-        elif not has_google_secrets():
-            st.error("Falta configurar `GCP_SERVICE_ACCOUNT` e `SHEET_ID` nos Secrets do Streamlit Cloud.")
-        elif not has_dropbox_token():
-            st.error("Falta configurar `DROPBOX_TOKEN` nos Secrets do Streamlit Cloud.")
-        else:
-            torneio = get_torneio(st.session_state.torneio_sel)
-            if not torneio:
-                st.warning("Sem torneio selecionado.")
+    if not st.session_state.admin_ok:
+        pw = st.text_input("Password", type="password")
+        if st.button("Entrar"):
+            if pw == admin_pw:
+                st.session_state.admin_ok = True
+                st.rerun()
             else:
-                st.markdown(f"**Torneio:** {torneio.get('nome','')}  \n📅 {torneio.get('data','')} · 📍 {torneio.get('local','')}")
-                with st.form("form_inscricao", clear_on_submit=True):
-                    nome = st.text_input("Nome completo")
-                    telefone = st.text_input("Número de telefone")
-                    foto = st.file_uploader("Fotografia", type=["jpg", "jpeg", "png"])
-                    ok = st.form_submit_button("Submeter inscrição")
+                st.error("Password inválida.")
+    else:
+        df_insc = read_sheet()
 
-                if ok:
-                    nome = (nome or "").strip()
-                    telefone_norm = normalize_phone(telefone)
-
-                    if not nome:
-                        st.error("Falta o nome.")
-                    elif not telefone_norm:
-                        st.error("Falta o número de telefone.")
-                    elif foto is None:
-                        st.error("Falta a fotografia.")
-                    else:
-                        try:
-                            _remember_tab_in_url("torneios")
-                            save_inscricao(torneio, nome, telefone_norm, foto)
-                            _track("torneio_signup_submit", {"torneio_id": torneio.get("id")})
-                            st.success("Inscrição submetida com sucesso ✅")
-                            st.caption("A foto foi enviada para o Dropbox (na pasta configurada).")
-                        except Exception as e:
-                            st.error("Erro ao guardar inscrição.")
-                            st.exception(e)
-
-    # ---- Sub-tab: Organizador
-    with sub_admin:
-        st.caption("Área privada do organizador: lista de inscritos e fotos.")
-
-        admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
-        if admin_pw is None:
-            st.warning("Define `ADMIN_PASSWORD` em Secrets para ativar login. (Por agora vou permitir acesso.)")
-            st.session_state.admin_ok = True
-
-        if not st.session_state.admin_ok:
-            pw = st.text_input("Password", type="password")
-            if st.button("Entrar"):
-                if pw == admin_pw:
-                    st.session_state.admin_ok = True
-                    st.rerun()
-                else:
-                    st.error("Password inválida.")
+        if df_insc.empty:
+            st.info("Ainda não há inscrições.")
         else:
-            if not has_google_secrets():
-                st.error("Falta configurar `GCP_SERVICE_ACCOUNT` e `SHEET_ID` nos Secrets.")
-            else:
-                try:
-                    df_insc = read_sheet()
-                except Exception as e:
-                    st.error("Erro ao ler inscrições da Google Sheet.")
-                    st.exception(e)
-                    st.stop()
-
-                if df_insc.empty:
-                    st.info("Ainda não há inscrições.")
-                else:
-                    # filtro por torneio
-                    if "torneio_id" not in df_insc.columns:
-                        st.error("A Sheet 'inscricoes' não tem a coluna 'torneio_id'. Confere os headers.")
-                        st.dataframe(df_insc, use_container_width=True, hide_index=True)
-                        st.stop()
-
-                    torneio_ids = sorted(df_insc["torneio_id"].astype(str).unique().tolist())
-                    sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
-
-                    view = df_insc.copy()
-                    if sel != "(Todos)":
-                        view = view[view["torneio_id"].astype(str) == sel]
-
-                    st.dataframe(
-                        view.drop(columns=[c for c in ["storage"] if c in view.columns]),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-
-                    st.markdown("### Fotos (últimas 12)")
-                    tail = view.tail(12)
-
-                    for _, r in tail.iterrows():
-                        st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
-                        foto_url = (r.get("foto_url", "") or "").strip()
-                        if foto_url:
-                            st.image(foto_url, use_container_width=True)
-                            st.markdown(f"[Abrir no Dropbox]({foto_url})")
-                        else:
-                            st.caption("Sem foto_url guardado (verifica o upload para Dropbox).")
-                        st.divider()
+            st.dataframe(df_insc, use_container_width=True, hide_index=True)
 
 
 with tab_pts:
