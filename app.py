@@ -4,6 +4,7 @@ import base64
 import datetime as dt
 from io import BytesIO
 from urllib.parse import urljoin, urlparse, quote_plus
+import json
 
 import pandas as pd
 import pdfplumber
@@ -91,9 +92,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-import os, base64
-import streamlit as st
-import streamlit.components.v1 as components
 
 def set_ios_home_icon(path="icon.png"):
     if not os.path.exists(path):
@@ -204,60 +202,6 @@ def _inject_tab_restorer_js():
 
 
 
-
-import os
-import streamlit as st
-
-IS_STAGING = os.path.exists("STAGING")
-
-if IS_STAGING:
-    st.markdown(
-        """
-        <style>
-        .staging-badge {
-            position: fixed;
-            top: 70px;
-            right: 20px;
-            background: #ff4b4b;
-            color: white;
-            padding: 8px 14px;
-            border-radius: 10px;
-            font-weight: 600;
-            z-index: 100000;
-            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
-        }
-        </style>
-        <div class="staging-badge">🧪 STAGING</div>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-ga4_track_pageview()
-
-# ---------------------------------------------------
-# GOOGLE ANALYTICS (GA4)
-# ---------------------------------------------------
-components.html(
-    """
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-RLL0HMMSVZ"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-
-      // Força configuração com domínio correto
-      gtag('config', 'G-RLL0HMMSVZ', {
-        page_path: window.location.pathname,
-        page_title: document.title,
-        page_location: window.location.href,
-        send_page_view: true
-      });
-    </script>
-    """,
-    height=0,
-)
 
 def ga_event(name: str, params: dict | None = None):
     """Envia um evento GA4 (client-side)."""
@@ -1042,214 +986,12 @@ def compute_metrics(view):
 
 
 
-# =================================================
-# TORNEIOS: STORAGE HELPERS (Google Sheets + Dropbox)
-# =================================================
-# Dados: Google Sheets (Service Account)
-# Fotos: Dropbox (Full Dropbox) em pasta específica
-#
-# Secrets necessários:
-#   SHEET_ID
-#   [GCP_SERVICE_ACCOUNT]
-#   DROPBOX_TOKEN
-#
-# Dependências:
-#   gspread
-#   google-auth
-#   dropbox
-# =================================================
-
-DROPBOX_BASE_PATH = "/Torneios/Fotos"  # podes mudar no código (ou tornar secret se quiseres)
-
-def has_google_secrets() -> bool:
-    return all(k in st.secrets for k in ["GCP_SERVICE_ACCOUNT", "SHEET_ID"])
-
-def has_dropbox_token() -> bool:
-    return bool(st.secrets.get("DROPBOX_TOKEN", "").strip())
-
-def normalize_phone(phone: str) -> str:
-    phone = (phone or "").strip()
-    phone = re.sub(r"[^\d+]", "", phone)
-    return phone
-
-def safe_slug(text: str) -> str:
-    text = (text or "").strip()
-    text = re.sub(r"[^a-zA-Z0-9_-]", "_", text)
-    return text[:60] if text else "user"
-
-import gspread
-from google.oauth2.service_account import Credentials
-
-@st.cache_resource
-def google_spreadsheet():
-    sa_info = dict(st.secrets["GCP_SERVICE_ACCOUNT"])
-
-    pk = sa_info.get("private_key", "")
-    if "\\n" in pk:
-        sa_info["private_key"] = pk.replace("\\n", "\n")
-
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
-
-    gc = gspread.authorize(creds)
-    return gc.open_by_key(st.secrets["SHEET_ID"])
 
 
-def google_ws(name: str):
-    """Abre uma worksheet pelo nome (ex: 'inscricoes', 'Torneios')."""
-    return google_spreadsheet().worksheet(name)
-
-
-def google_sheet():
-    # Mantém compatibilidade com inscrições
-    return google_ws("inscricoes")
-
-def ensure_headers(ws):
-    wanted = ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-    headers = ws.row_values(1)
-    if headers != wanted:
-        ws.clear()
-        ws.append_row(wanted)
-    return wanted
-
-def append_to_sheet(row: dict):
-    ws = google_sheet()
-    ensure_headers(ws)
-    ws.append_row([
-        row.get("torneio_id",""),
-        row.get("torneio_nome",""),
-        row.get("timestamp",""),
-        row.get("nome",""),
-        row.get("telefone",""),
-        row.get("foto_url",""),
-        row.get("storage","dropbox"),
-    ])
-
-def read_sheet() -> pd.DataFrame:
-    ws = google_sheet()
-    values = ws.get_all_values()
-    if len(values) <= 1:
-        cols = values[0] if values else ["torneio_id","torneio_nome","timestamp","nome","telefone","foto_url","storage"]
-        return pd.DataFrame(columns=cols)
-    return pd.DataFrame(values[1:], columns=values[0])
-
-
-def read_torneios() -> list[dict]:
-    """Lê a aba 'Torneios' da Google Sheet e devolve lista de torneios ativos."""
-    import gspread
-
-    try:
-        ws = google_ws("Torneios")
-    except gspread.exceptions.WorksheetNotFound:
-        st.error("A aba 'Torneios' não existe na Google Sheet.")
-        return []
-
-    values = ws.get_all_values()
-    if len(values) <= 1:
-        return []
-
-    headers = values[0]
-    rows = values[1:]
-
-    torneios: list[dict] = []
-    for row in rows:
-        data = dict(zip(headers, row))
-
-        if str(data.get("ativo", "")).upper() != "TRUE":
-            continue
-
-        # vagas pode vir vazio
-        try:
-            vagas = int(data.get("vagas") or 0)
-        except Exception:
-            vagas = 0
-
-        torneios.append({
-            "id": data.get("id"),
-            "nome": data.get("nome"),
-            "data": data.get("data"),
-            "local": data.get("local"),
-            "descricao": data.get("descricao", ""),
-            "img": data.get("imagem_url"),
-            "vagas": vagas,
-        })
-
-    return torneios
-
-
-
-def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str) -> str | None:
-    import dropbox
-    from dropbox.files import WriteMode
-    from dropbox.sharing import SharedLinkSettings
-    from dropbox.exceptions import ApiError, AuthError
-
-    token = st.secrets.get("DROPBOX_TOKEN", "").strip()
-
-    if not token:
-        st.error("DROPBOX_TOKEN não configurado.")
-        return None
-
-    try:
-        dbx = dropbox.Dropbox(token)
-
-        base = DROPBOX_BASE_PATH.rstrip("/")
-        folder_path = f"{base}/{torneio_id}"
-        dropbox_path = f"{folder_path}/{filename}"
-
-        # cria pastas se não existirem
-        try:
-            dbx.files_create_folder_v2(base)
-        except Exception:
-            pass
-        try:
-            dbx.files_create_folder_v2(folder_path)
-        except Exception:
-            pass
-
-        dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
-
-        try:
-            link_meta = dbx.sharing_create_shared_link_with_settings(
-                dropbox_path,
-                settings=SharedLinkSettings()
-            )
-            url = link_meta.url
-        except ApiError:
-            links = dbx.sharing_list_shared_links(path=dropbox_path).links
-            url = links[0].url if links else None
-
-        return url.replace("?dl=0", "?raw=1") if url else None
-
-    except AuthError:
-        st.error("Erro de autenticação Dropbox (token inválido ou expirado).")
-        return None
-
-    except Exception as e:
-        st.error("Erro inesperado no Dropbox.")
-        st.exception(e)
-        return None
-
-def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
-    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    telefone_norm = normalize_phone(telefone)
-
-    file_bytes = foto.getvalue()
-    ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
-    filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
-
-    foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
-
-    row = {
-        "torneio_id": torneio["id"],
-        "torneio_nome": torneio["nome"],
-        "timestamp": ts,
-        "nome": nome.strip(),
-        "telefone": telefone_norm,
-        "foto_url": foto_url,
-        "storage": "dropbox",
-    }
-    append_to_sheet(row)
+# -------------------------------------------------
+# TORNEIOS: STORAGE (Google Sheets + Dropbox)
+# -------------------------------------------------
+from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
 
 # -------------------------------------------------
 # TOP-LEVEL NAV (Tabs): Calendário / Pontos / Rankings
