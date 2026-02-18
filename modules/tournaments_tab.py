@@ -64,7 +64,6 @@ def render_tournaments(is_mobile: bool):
                     on_click=ir_para_inscricao,
                     args=(t.get("id"),),
                 )
-)
 
         st.divider()
 
