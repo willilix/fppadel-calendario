@@ -423,6 +423,12 @@ def _inject_tab_url_sync_and_restore():
     }} catch(e) {{}}
   }}
 
+  function getSelectedTabLabel() {{
+    const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
+    const active = tabs.find(b => b.getAttribute("aria-selected") === "true");
+    return active ? (active.innerText || "").trim() : null;
+  }}
+
   function clickTabByLabel(label) {{
     const tabs = Array.from(window.parent.document.querySelectorAll('button[role="tab"]'));
     const btn = tabs.find(b => (b.innerText || '').trim() === label);
@@ -442,16 +448,39 @@ def _inject_tab_url_sync_and_restore():
     }});
   }}
 
+  function ensureUrlHasTab() {{
+    const url = new URL(window.location.href);
+    if (!url.searchParams.get("tab")) {{
+      const label = getSelectedTabLabel();
+      const slug = label ? labelToSlug[label] : null;
+      if (slug) setUrl(slug);
+    }}
+  }}
+
+  // 1) bind listeners (retry because tabs render async)
   bindTabs();
-  const obs = new MutationObserver(() => bindTabs());
+  const obs = new MutationObserver(() => {{
+    bindTabs();
+    ensureUrlHasTab();
+  }});
   obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
 
+  // 2) ensure URL has tab even without click
+  let tries = 0;
+  const t = setInterval(() => {{
+    tries++;
+    bindTabs();
+    ensureUrlHasTab();
+    if (tries > 25) clearInterval(t);
+  }}, 120);
+
+  // 3) restore from URL if present
   if (targetLabel) {{
-    let tries = 0;
-    const timer = setInterval(() => {{
-      tries++;
+    let rtries = 0;
+    const rt = setInterval(() => {{
+      rtries++;
       clickTabByLabel(targetLabel);
-      if (tries > 20) clearInterval(timer);
+      if (rtries > 20) clearInterval(rt);
     }}, 120);
   }}
 }})();
@@ -459,6 +488,7 @@ def _inject_tab_url_sync_and_restore():
 """,
         height=0,
     )
+
 
 
 _inject_tab_url_sync_and_restore()
