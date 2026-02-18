@@ -144,14 +144,27 @@ def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str):
 
     try:
         dbx = dropbox.Dropbox(token)
+        # Validar token cedo (gera AuthError imediatamente se for inválido/expirado)
+        try:
+            _ = dbx.users_get_current_account()
+        except AuthError as e:
+            st.error("Dropbox: token inválido/expirado ou sem permissões. Regera o token em Dropbox Developers e actualiza DROPBOX_TOKEN em st.secrets.")
+            st.exception(e)
+            return "", ""
+
 
         base = DROPBOX_BASE_PATH.rstrip("/")
         folder_path = f"{base}/{torneio_id}"
         dropbox_path = f"{folder_path}/{filename}"
 
         # garantir estrutura
-        _ensure_dropbox_folder(dbx, base)
-        _ensure_dropbox_folder(dbx, folder_path)
+        try:
+            _ensure_dropbox_folder(dbx, base)
+            _ensure_dropbox_folder(dbx, folder_path)
+        except AuthError as e:
+            st.error("Dropbox: falha de autenticação ao criar pastas (token inválido/expirado?).")
+            st.exception(e)
+            return "", ""
 
         # upload
         dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
@@ -239,7 +252,12 @@ def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
             ext = original_name.split(".")[-1].lower()
         filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
 
-        foto_url, storage_path = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
+        try:
+            foto_url, storage_path = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
+        except Exception as e:
+            st.error("Upload para Dropbox falhou — vou gravar a inscrição sem foto.")
+            st.exception(e)
+            foto_url, storage_path = "", ""
 
     row = {
         "torneio_id": torneio.get("id",""),
