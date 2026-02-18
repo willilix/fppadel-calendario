@@ -77,7 +77,54 @@ def render_staging_badge():
             z-index: 100000;
             box-shadow: 0 6px 16px rgba(0,0,0,0.25);
         }
-        </style>
+        
+/* =========================================
+   RADIO HORIZONTAL COMO TABS (PÍLULA)
+========================================= */
+
+div[role="radiogroup"]{
+  display: flex !important;
+  gap: 10px !important;
+  flex-wrap: nowrap !important;
+  margin-bottom: 20px !important;
+}
+
+div[role="radiogroup"] input[type="radio"]{
+  display: none !important;
+}
+
+div[role="radiogroup"] > label{
+  border-radius: 999px !important;
+  padding: 10px 16px !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.06) !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease-in-out !important;
+}
+
+div[role="radiogroup"] > label p{
+  margin: 0 !important;
+  font-weight: 600 !important;
+  opacity: 0.85 !important;
+}
+
+div[role="radiogroup"] > label:hover{
+  background: rgba(255,255,255,0.10) !important;
+  transform: translateY(-1px) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked){
+  background: linear-gradient(135deg, #1f6fff, #4ea1ff) !important;
+  border-color: transparent !important;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.25) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked) p{
+  opacity: 1 !important;
+  color: white !important;
+}
+
+</style>
         <div class="staging-badge">🧪 STAGING</div>
         """,
         unsafe_allow_html=True,
@@ -345,6 +392,53 @@ div[data-baseweb="input"] > div { border-radius: 16px !important; }
     border: 1px solid rgba(255,255,255,0.1);
     box-shadow: 0 18px 60px rgba(0,0,0,0.5);
 }
+
+/* =========================================
+   RADIO HORIZONTAL COMO TABS (PÍLULA)
+========================================= */
+
+div[role="radiogroup"]{
+  display: flex !important;
+  gap: 10px !important;
+  flex-wrap: nowrap !important;
+  margin-bottom: 20px !important;
+}
+
+div[role="radiogroup"] input[type="radio"]{
+  display: none !important;
+}
+
+div[role="radiogroup"] > label{
+  border-radius: 999px !important;
+  padding: 10px 16px !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.06) !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease-in-out !important;
+}
+
+div[role="radiogroup"] > label p{
+  margin: 0 !important;
+  font-weight: 600 !important;
+  opacity: 0.85 !important;
+}
+
+div[role="radiogroup"] > label:hover{
+  background: rgba(255,255,255,0.10) !important;
+  transform: translateY(-1px) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked){
+  background: linear-gradient(135deg, #1f6fff, #4ea1ff) !important;
+  border-color: transparent !important;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.25) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked) p{
+  opacity: 1 !important;
+  color: white !important;
+}
+
 </style>
         """,
         unsafe_allow_html=True,
@@ -386,6 +480,53 @@ def render_logo(logo_path: str = "armadura.png", subtitle: str = "App oficial do
     from { opacity:0; }
     to   { opacity:0.85; }
 }
+
+/* =========================================
+   RADIO HORIZONTAL COMO TABS (PÍLULA)
+========================================= */
+
+div[role="radiogroup"]{
+  display: flex !important;
+  gap: 10px !important;
+  flex-wrap: nowrap !important;
+  margin-bottom: 20px !important;
+}
+
+div[role="radiogroup"] input[type="radio"]{
+  display: none !important;
+}
+
+div[role="radiogroup"] > label{
+  border-radius: 999px !important;
+  padding: 10px 16px !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.06) !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease-in-out !important;
+}
+
+div[role="radiogroup"] > label p{
+  margin: 0 !important;
+  font-weight: 600 !important;
+  opacity: 0.85 !important;
+}
+
+div[role="radiogroup"] > label:hover{
+  background: rgba(255,255,255,0.10) !important;
+  transform: translateY(-1px) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked){
+  background: linear-gradient(135deg, #1f6fff, #4ea1ff) !important;
+  border-color: transparent !important;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.25) !important;
+}
+
+div[role="radiogroup"] > label:has(input:checked) p{
+  opacity: 1 !important;
+  color: white !important;
+}
+
 </style>
         """,
         unsafe_allow_html=True,
