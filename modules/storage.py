@@ -49,9 +49,15 @@ def append_to_sheet(row: dict):
         "torneio_id","torneio_nome","timestamp",
         "nome","telefone","foto_url","storage"
     ]
-    if ws.row_values(1) != headers:
-        ws.clear()
-        ws.append_row(headers)
+    # ⚠️ Não limpar a sheet automaticamente se os headers diferirem.
+    # Isso podia apagar dados existentes. Em vez disso, tenta alinhar e prossegue.
+    existing = ws.row_values(1)
+    if existing != headers:
+        if not existing:
+            ws.append_row(headers)
+        else:
+            # Se já existem headers diferentes, não apagamos. Apenas registamos.
+            st.warning("Atenção: os headers da sheet 'inscricoes' não estão na ordem esperada. Vou continuar a gravar por ordem fixa.")
 
     ws.append_row([
         row.get("torneio_id",""),
@@ -60,8 +66,8 @@ def append_to_sheet(row: dict):
         row.get("nome",""),
         row.get("telefone",""),
         row.get("foto_url",""),
-        row.get("storage","dropbox"),
-    ])
+        row.get("storage",""),
+    ], value_input_option="USER_ENTERED")
 
 
 def read_torneios():
@@ -102,15 +108,39 @@ def read_torneios():
 # DROPBOX
 # =================================================
 
+def _ensure_dropbox_folder(dbx, path: str):
+    """Cria pastas Dropbox de forma incremental (evita erro quando o pai não existe)."""
+    import dropbox
+    from dropbox.exceptions import ApiError
+
+    # Normalizar
+    path = (path or "").strip()
+    if not path or path == "/":
+        return
+
+    # Criar cada segmento: /Torneios, /Torneios/Fotos, /Torneios/Fotos/<id>
+    parts = [p for p in path.split("/") if p]
+    curr = ""
+    for p in parts:
+        curr += f"/{p}"
+        try:
+            dbx.files_create_folder_v2(curr)
+        except ApiError:
+            # já existe ou sem permissões; deixamos subir para o caller em casos críticos
+            pass
+
+
 def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str):
+    """Faz upload para Dropbox e devolve (public_url, dropbox_path)."""
     import dropbox
     from dropbox.files import WriteMode
     from dropbox.sharing import SharedLinkSettings
     from dropbox.exceptions import ApiError, AuthError
 
-    token = st.secrets.get("DROPBOX_TOKEN", "").strip()
+    token = (st.secrets.get("DROPBOX_TOKEN", "") or "").strip()
     if not token:
-        return None
+        st.error("DROPBOX_TOKEN não está definido em st.secrets.")
+        return "", ""
 
     try:
         dbx = dropbox.Dropbox(token)
@@ -119,18 +149,15 @@ def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str):
         folder_path = f"{base}/{torneio_id}"
         dropbox_path = f"{folder_path}/{filename}"
 
-        try:
-            dbx.files_create_folder_v2(base)
-        except:
-            pass
+        # garantir estrutura
+        _ensure_dropbox_folder(dbx, base)
+        _ensure_dropbox_folder(dbx, folder_path)
 
-        try:
-            dbx.files_create_folder_v2(folder_path)
-        except:
-            pass
-
+        # upload
         dbx.files_upload(file_bytes, dropbox_path, mode=WriteMode.overwrite, mute=True)
 
+        # link público (ou reutilizar existente)
+        url = ""
         try:
             link_meta = dbx.sharing_create_shared_link_with_settings(
                 dropbox_path,
@@ -139,12 +166,19 @@ def upload_photo_to_dropbox(file_bytes: bytes, torneio_id: str, filename: str):
             url = link_meta.url
         except ApiError:
             links = dbx.sharing_list_shared_links(path=dropbox_path).links
-            url = links[0].url if links else None
+            url = links[0].url if links else ""
 
-        return url.replace("?dl=0", "?raw=1") if url else None
+        public_url = url.replace("?dl=0", "?raw=1") if url else ""
+        return public_url, dropbox_path
 
-    except AuthError:
-        return None
+    except AuthError as e:
+        st.error("Falha de autenticação no Dropbox (token inválido?).")
+        st.exception(e)
+        return "", ""
+    except Exception as e:
+        st.error("Erro inesperado no upload para Dropbox.")
+        st.exception(e)
+        return "", ""
 
 
 # =================================================
@@ -163,24 +197,59 @@ def safe_slug(text: str) -> str:
     return text[:60] if text else "user"
 
 
+def _extract_upload(foto):
+    """
+    Aceita:
+      - streamlit.runtime.uploaded_file_manager.UploadedFile (st.file_uploader)
+      - dict guardado em session_state: {"bytes":..., "name":..., "type":...}
+    Devolve: (bytes, original_name, content_type)
+    """
+    if foto is None:
+        return b"", "", ""
+
+    # dict (session_state stash)
+    if isinstance(foto, dict):
+        b = foto.get("bytes") or b""
+        n = foto.get("name") or "foto.jpg"
+        t = foto.get("type") or ""
+        return b, n, t
+
+    # UploadedFile
+    try:
+        b = foto.getvalue()
+        n = getattr(foto, "name", "") or "foto.jpg"
+        t = getattr(foto, "type", "") or ""
+        return b, n, t
+    except Exception:
+        return b"", "", ""
+
+
 def save_inscricao(torneio: dict, nome: str, telefone: str, foto):
     ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     telefone_norm = normalize_phone(telefone)
 
-    file_bytes = foto.getvalue()
-    ext = (foto.name.split(".")[-1] if foto and foto.name and "." in foto.name else "jpg").lower()
-    filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+    file_bytes, original_name, _content_type = _extract_upload(foto)
 
-    foto_url = upload_photo_to_dropbox(file_bytes, torneio["id"], filename) or ""
+    foto_url = ""
+    storage_path = ""
+
+    if file_bytes:
+        ext = "jpg"
+        if original_name and "." in original_name:
+            ext = original_name.split(".")[-1].lower()
+        filename = f"{torneio['id']}_{int(dt.datetime.now().timestamp())}_{safe_slug(nome)}.{ext}"
+
+        foto_url, storage_path = upload_photo_to_dropbox(file_bytes, torneio["id"], filename)
 
     row = {
-        "torneio_id": torneio["id"],
-        "torneio_nome": torneio["nome"],
+        "torneio_id": torneio.get("id",""),
+        "torneio_nome": torneio.get("nome",""),
         "timestamp": ts,
-        "nome": nome.strip(),
+        "nome": (nome or "").strip(),
         "telefone": telefone_norm,
         "foto_url": foto_url,
-        "storage": "dropbox",
+        # aqui guardamos o caminho real (ou vazio)
+        "storage": storage_path or "dropbox",
     }
 
     append_to_sheet(row)
