@@ -204,13 +204,13 @@ def render_betting():
     with tabs[0]:
         # Flash message (mostra após rerun)
         _flash_render()
-
-        # Auto-refresh para countdown (a cada 30s)
-        components.html("""
-        <script>
-          setTimeout(function(){ window.parent.location.reload(); }, 30000);
-        </script>
-        """, height=0)
+        # Auto-refresh para countdown (a cada 30s) sem fazer hard-reload (mantém login)
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=30_000, key="mkt_autorefresh")
+        except Exception:
+            # Se a lib não estiver instalada, não forçamos refresh automático
+            pass
 
         show_all = st.toggle("Mostrar resolvidos / histórico", value=False, key="mkt_show_all")
         markets_all = list_markets(limit=200)
@@ -229,61 +229,61 @@ def render_betting():
                 close_time = m.get("close_time")
                 close_str = close_time.isoformat() if close_time else "—"
 
-                with st.expander(f"{title}", expanded=False):
-                    st.caption(f"ID: `{m.get('market_id','')}`")
-                    st.markdown(_market_header_html(title, m.get("status") or "", close_time), unsafe_allow_html=True)
-                    st.write(m.get("description", ""))
+                st.markdown(_market_header_html(title, m.get("status") or "", close_time), unsafe_allow_html=True)
+                st.caption(f"ID: `{m.get('market_id','')}`")
+                with st.expander("Ver detalhes", expanded=False):
+                        st.write(m.get("description", ""))
 
-                    options = m.get("options") or []
-                    totals = m.get("totals") or {}
-                    total_pool = int(m.get("total_pool") or 0)
+                        options = m.get("options") or []
+                        totals = m.get("totals") or {}
+                        total_pool = int(m.get("total_pool") or 0)
 
-                    st.write("**Pote total:**", f"{total_pool:,}".replace(",", " "))
+                        st.write("**Pote total:**", f"{total_pool:,}".replace(",", " "))
 
-                    # Polymarket-style: percentagens por opção
-                    for opt in options:
-                        amt_opt = int(totals.get(opt) or 0)
-                        pct = _pct(amt_opt, total_pool)
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            st.write(f"**{opt}** — {pct:0.1f}%")
-                            st.progress(min(max(pct / 100.0, 0.0), 1.0))
-                        with c2:
-                            st.write(f"{amt_opt:,}".replace(",", " "))
+                        # Polymarket-style: percentagens por opção
+                        for opt in options:
+                            amt_opt = int(totals.get(opt) or 0)
+                            pct = _pct(amt_opt, total_pool)
+                            c1, c2 = st.columns([3, 1])
+                            with c1:
+                                st.write(f"**{opt}** — {pct:0.1f}%")
+                                st.progress(min(max(pct / 100.0, 0.0), 1.0))
+                            with c2:
+                                st.write(f"{amt_opt:,}".replace(",", " "))
 
-                    if (m.get("status") == "open") and options:
-                        opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
-                        amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
-                        toast_spot = st.empty()
-                        if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
-                            ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
+                        if (m.get("status") == "open") and options:
+                            opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
+                            amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
+                            toast_spot = st.empty()
+                            if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
+                                ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
 
-                            if ok:
-                                shown_amt = f"{int(amt):,}".replace(",", " ")
-                                nice_msg = f"Aposta submetida com sucesso ({shown_amt})"
-                                # Toast inline exatamente onde o user está (dentro do expander)
-                                toast_spot.markdown(_toast_html(nice_msg, "success"), unsafe_allow_html=True)
-                                # Confetti
-                                try:
-                                    st.balloons()
-                                except Exception:
-                                    pass
-                                # Som (nota: no iOS pode ser bloqueado; em desktop normalmente toca)
-                                click_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
-                                toast_spot.markdown(f'<audio autoplay><source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav"></audio>', unsafe_allow_html=True)
-                                # Também guardar para aparecer no topo após rerun (fallback)
-                                st.session_state["bet_flash"] = {"kind": "success", "msg": "✅ " + nice_msg}
-                            else:
-                                toast_spot.markdown(_toast_html(str(msg), "error"), unsafe_allow_html=True)
-                                st.session_state["bet_flash"] = {"kind": "error", "msg": "❌ " + str(msg)}
+                                if ok:
+                                    shown_amt = f"{int(amt):,}".replace(",", " ")
+                                    nice_msg = f"Aposta submetida com sucesso ({shown_amt})"
+                                    # Toast inline exatamente onde o user está (dentro do expander)
+                                    toast_spot.markdown(_toast_html(nice_msg, "success"), unsafe_allow_html=True)
+                                    # Confetti
+                                    try:
+                                        st.balloons()
+                                    except Exception:
+                                        pass
+                                    # Som (nota: no iOS pode ser bloqueado; em desktop normalmente toca)
+                                    click_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
+                                    toast_spot.markdown(f'<audio autoplay><source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav"></audio>', unsafe_allow_html=True)
+                                    # Também guardar para aparecer no topo após rerun (fallback)
+                                    st.session_state["bet_flash"] = {"kind": "success", "msg": "✅ " + nice_msg}
+                                else:
+                                    toast_spot.markdown(_toast_html(str(msg), "error"), unsafe_allow_html=True)
+                                    st.session_state["bet_flash"] = {"kind": "error", "msg": "❌ " + str(msg)}
 
-                            # pequeno delay para deixar o browser iniciar o áudio/mostrar toast
-                            time.sleep(0.6)
-                            st.rerun()
-                    else:
-                        ro = m.get("resolved_option")
-                        if ro:
-                            st.success(f"Resolvido: **{ro}**")
+                                # pequeno delay para deixar o browser iniciar o áudio/mostrar toast
+                                time.sleep(0.6)
+                                st.rerun()
+                        else:
+                            ro = m.get("resolved_option")
+                            if ro:
+                                st.success(f"Resolvido: **{ro}**")
 
     # -----------------
     # Carteira
