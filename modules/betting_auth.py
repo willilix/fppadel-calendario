@@ -78,7 +78,7 @@ def signup_form():
         st.warning("Auto-registo indisponível: define BETTING_INVITE_CODE nos Secrets.")
         return
 
-    display_name = st.text_input("User", key="bet_signup_name")
+    display_name = st.text_input("User (nome simples para não esquecer)", key="bet_signup_name")
     pin = st.text_input("PIN (mín. 4)", type="password", key="bet_signup_pin")
     invite = st.text_input("Invite code", type="password", key="bet_signup_invite")
 
