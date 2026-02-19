@@ -1,5 +1,6 @@
 import datetime as dt
 import streamlit as st
+import streamlit.components.v1 as components
 
 from modules.betting_firestore import (
     list_markets, create_market, place_bet, get_market,
@@ -26,18 +27,82 @@ def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
 
 
 def _flash_render():
-    """Render one-time flash message saved in session_state."""
-    msg = st.session_state.get("bet_flash_msg")
-    if not msg:
+    """Render one-time flash message saved in session_state (com animação + confetti + som)."""
+    payload = st.session_state.get("bet_flash")
+    if not payload:
         return
-    if str(msg).startswith("✅"):
-        st.success(msg)
-    else:
-        st.error(msg)
-    st.session_state.pop("bet_flash_msg", None)
+
+    kind = payload.get("kind", "info")
+    msg = str(payload.get("msg", ""))
+
+    # --- Slide-in toast (HTML/CSS) ---
+    toast_bg = "rgba(34,197,94,0.22)" if kind == "success" else "rgba(239,68,68,0.18)"
+    toast_border = "rgba(34,197,94,0.45)" if kind == "success" else "rgba(239,68,68,0.40)"
+
+    components.html(
+        f"""
+        <style>
+          .bet-toast {{
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 999999;
+            max-width: min(520px, calc(100vw - 36px));
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: {toast_bg};
+            border: 1px solid {toast_border};
+            color: rgba(255,255,255,0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+            animation: slideIn 260ms ease-out, fadeOut 260ms ease-in 2.6s forwards;
+          }}
+          .bet-toast .t {{
+            font-size: 14px;
+            line-height: 1.25;
+            margin: 0;
+          }}
+          @keyframes slideIn {{
+            from {{ transform: translateX(18px); opacity: 0; }}
+            to   {{ transform: translateX(0); opacity: 1; }}
+          }}
+          @keyframes fadeOut {{
+            to {{ opacity: 0; transform: translateY(6px); }}
+          }}
+        </style>
+        <div class="bet-toast"><p class="t">{msg}</p></div>
+        """,
+        height=0,
+    )
+
+    # --- Confetti (simples) ---
+    if kind == "success":
+        try:
+            st.balloons()
+        except Exception:
+            pass
+
+    # --- Click sound (autoplay; pode ser bloqueado no iOS, mas funciona em muitos browsers desktop) ---
+    if kind == "success":
+        # Tiny click WAV (very short), base64 encoded
+        click_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
+        components.html(
+            f"""
+            <audio autoplay>
+              <source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav">
+            </audio>
+            """,
+            height=0,
+        )
+
+    # Clear after showing once
+    st.session_state.pop("bet_flash", None)
 
 
 def render_betting():
+
     st.title("Apostas do 60")
 
     u = current_user()
@@ -133,9 +198,9 @@ def render_betting():
 
                             if ok:
                                 shown_amt = f"{int(amt):,}".replace(",", " ")
-                                st.session_state["bet_flash_msg"] = f"✅ Aposta submetida com sucesso ({shown_amt})"
+                                st.session_state["bet_flash"] = {"kind":"success","msg": f"✅ Aposta submetida com sucesso ({shown_amt})"}
                             else:
-                                st.session_state["bet_flash_msg"] = f"❌ {msg}"
+                                st.session_state["bet_flash"] = {"kind":"error","msg": f"❌ {msg}"}
 
                             st.rerun()
                     else:
