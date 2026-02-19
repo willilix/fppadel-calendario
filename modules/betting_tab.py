@@ -5,7 +5,11 @@ from modules.betting_firestore import (
     list_markets, create_market, place_bet, get_market,
     resolve_market, cancel_market, get_balance, list_ledger
 )
-from modules.betting_auth import current_user, login_form, logout, admin_panel_create_user, admin_panel_disable_user
+from modules.betting_auth import (
+    current_user, login_form, logout,
+    admin_panel_create_user, admin_panel_disable_user, admin_panel_list_users
+)
+
 
 def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
     tz = dt.timezone.utc
@@ -13,23 +17,31 @@ def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
     close = (now + dt.timedelta(days=days_ahead)).replace(hour=hour, minute=0, second=0, microsecond=0)
     return close
 
+
 def render_betting():
     st.title("Mercados (play-money)")
 
     u = current_user()
+
+    # -------------------------------------------------
+    # BOOTSTRAP: permitir criar os primeiros utilizadores
+    # -------------------------------------------------
     if not u:
         login_form()
         st.divider()
         st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
 
-    # ✅ Admin bootstrap: criar os primeiros utilizadores sem login
-    st.subheader("Admin (bootstrap)")
-    st.caption("Cria utilizadores iniciais. Protegido por Admin PIN.")
-    admin_panel_create_user()
-    admin_panel_disable_user()
-    return
+        st.subheader("Admin (bootstrap)")
+        st.caption("Cria utilizadores iniciais. Protegido por Admin PIN.")
+        admin_panel_create_user()
+        admin_panel_disable_user()
+        admin_panel_list_users()
+        return
 
-    colA, colB, colC = st.columns([2,1,1])
+    # -------------------------------------------------
+    # HEADER (user logged-in)
+    # -------------------------------------------------
+    colA, colB, colC = st.columns([2, 1, 1])
     with colA:
         st.write(f"👤 **{u['display_name']}**")
     with colB:
@@ -52,12 +64,12 @@ def render_betting():
         else:
             for m in markets:
                 status = m.get("status")
-                title = m.get("title","(sem título)")
+                title = m.get("title", "(sem título)")
                 close_time = m.get("close_time")
                 close_str = close_time.isoformat() if close_time else "—"
 
                 with st.expander(f"{title}  ·  {status.upper()}  ·  fecha: {close_str}", expanded=False):
-                    st.write(m.get("description",""))
+                    st.write(m.get("description", ""))
                     options = m.get("options") or []
                     totals = m.get("totals") or {}
                     total_pool = int(m.get("total_pool") or 0)
@@ -108,9 +120,7 @@ def render_betting():
         st.divider()
         admin_panel_create_user()
         admin_panel_disable_user()
-
-from modules.betting_auth import admin_panel_list_users
-admin_panel_list_users()
+        admin_panel_list_users()
 
         st.divider()
         st.markdown("### Admin: criar mercado")
