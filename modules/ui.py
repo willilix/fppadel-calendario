@@ -279,7 +279,7 @@ a:hover { text-decoration: underline; }
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: 26px;
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(255,255,255,0.05);
     font-size: 0.78rem;
