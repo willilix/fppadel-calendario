@@ -84,6 +84,7 @@ def render_betting():
                 close_str = close_time.isoformat() if close_time else "—"
 
                 with st.expander(f"{title}  ·  {status.upper()}  ·  fecha: {close_str}", expanded=False):
+                    st.caption(f"ID: `{m['market_id']}`")
                     st.write(m.get("description", ""))
                     options = m.get("options") or []
                     totals = m.get("totals") or {}
