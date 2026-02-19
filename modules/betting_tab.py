@@ -80,6 +80,14 @@ def render_betting():
     # Mercados
     # -----------------
     with tabs[0]:
+        # Flash message (mostra após rerun)
+if "bet_flash_msg" in st.session_state:
+    if st.session_state["bet_flash_msg"].startswith("✅"):
+        st.success(st.session_state["bet_flash_msg"])
+    else:
+        st.error(st.session_state["bet_flash_msg"])
+    del st.session_state["bet_flash_msg"]
+
         show_all = st.toggle("Mostrar resolvidos / histórico", value=False, key="mkt_show_all")
         markets_all = list_markets(limit=200)
 
