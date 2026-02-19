@@ -3,7 +3,7 @@ import streamlit as st
 
 from modules.betting_firestore import (
     list_markets, create_market, place_bet, get_market,
-    resolve_market, cancel_market, get_balance, list_ledger
+    resolve_market, cancel_market, get_balance, list_ledger, fs_client
 )
 from modules.betting_auth import (
     current_user, login_form, signup_form, logout,
@@ -73,7 +73,14 @@ def render_betting():
     # Mercados
     # -----------------
     with tabs[0]:
-        markets = list_markets(limit=50)
+        show_all = st.toggle("Mostrar resolvidos / histórico", value=False, key="mkt_show_all")
+        markets_all = list_markets(limit=100)
+
+        if show_all:
+            markets = markets_all
+        else:
+            markets = [mm for mm in markets_all if mm.get("status") == "open"]
+
         if not markets:
             st.info("Ainda não há mercados.")
         else:
@@ -213,3 +220,55 @@ def render_betting():
                                 ok, msg = cancel_market(market_id)
                                 (st.success if ok else st.error)(msg)
                                 st.rerun()
+
+
+            st.divider()
+            st.markdown("### Admin: apagar mercado")
+            st.caption("Apaga mercados resolvidos/cancelados (inclui as apostas desse mercado).")
+
+            if not is_admin:
+                st.info("Introduz o Admin PIN para apagar mercados.")
+            else:
+                db = fs_client()
+                all_for_delete = list_markets(limit=200)
+                deletable = [mm for mm in all_for_delete if mm.get("status") in ("resolved", "cancelled")]
+
+                if not deletable:
+                    st.info("Não há mercados resolvidos/cancelados para apagar.")
+                else:
+                    def _dlabel(m):
+                        title = m.get("title", "(sem título)")
+                        status = (m.get("status") or "").upper()
+                        mid = m.get("market_id") or ""
+                        return f"{title} · {status} · {mid}"
+
+                    dlabels = [_dlabel(mm) for mm in deletable]
+                    dsel = st.selectbox("Escolhe o mercado para apagar", dlabels, key="admin_market_delete_pick")
+                    didx = dlabels.index(dsel)
+                    del_market_id = deletable[didx].get("market_id")
+
+                    st.warning("Isto remove o mercado e as bets associadas. Não dá para desfazer.")
+                    confirm = st.checkbox("Confirmo que quero apagar este mercado", key="admin_market_delete_confirm")
+
+                    if st.button("Apagar mercado", type="primary", disabled=not confirm, key="admin_market_delete_btn"):
+                        mref = db.collection("markets").document(del_market_id)
+
+                        # apagar bets (em batches)
+                        bets = list(mref.collection("bets").stream())
+                        batch = db.batch()
+                        ops = 0
+                        for bdoc in bets:
+                            batch.delete(bdoc.reference)
+                            ops += 1
+                            if ops >= 450:
+                                batch.commit()
+                                batch = db.batch()
+                                ops = 0
+                        if ops:
+                            batch.commit()
+
+                        # apagar mercado
+                        mref.delete()
+
+                        st.success(f"Mercado apagado: {del_market_id}")
+                        st.rerun()
