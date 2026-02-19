@@ -236,15 +236,6 @@ def render_betting():
                 st.markdown(_market_header_html(title, m.get("status") or "", close_time), unsafe_allow_html=True)
                 st.caption(f"ID: `{m.get('market_id','')}`")
                 with st.expander("Ver detalhes", expanded=bool(st.session_state.get(f"mkt_exp_{m['market_id']}", False))):
-                    cexp1, cexp2 = st.columns([1, 1])
-                    with cexp1:
-                        if st.button("📌 Manter aberto", key=f"pin_{m['market_id']}"):
-                            _set_expanded(m['market_id'], True)
-                            st.rerun()
-                    with cexp2:
-                        if st.button("✖ Fechar", key=f"close_{m['market_id']}"):
-                            _set_expanded(m['market_id'], False)
-                            st.rerun()
 
                         st.write(m.get("description", ""))
 
