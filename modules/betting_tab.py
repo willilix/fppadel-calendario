@@ -176,7 +176,7 @@ def render_betting():
                                 shown_amt = f"{int(amt):,}".replace(",", " ")
                                 nice_msg = f"Aposta submetida com sucesso ({shown_amt})"
                                 # Toast inline exatamente onde o user está (dentro do expander)
-                                toast_spot.components.v1.html(_toast_html(nice_msg, "success"), height=72)
+                                toast_spot.markdown(_toast_html(nice_msg, "success"), unsafe_allow_html=True)
                                 # Confetti
                                 try:
                                     st.balloons()
@@ -184,14 +184,11 @@ def render_betting():
                                     pass
                                 # Som (nota: no iOS pode ser bloqueado; em desktop normalmente toca)
                                 click_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
-                                toast_spot.components.v1.html(
-                                    f'<audio autoplay><source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav"></audio>',
-                                    height=0,
-                                )
+                                toast_spot.markdown(f'<audio autoplay><source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav"></audio>', unsafe_allow_html=True)
                                 # Também guardar para aparecer no topo após rerun (fallback)
                                 st.session_state["bet_flash"] = {"kind": "success", "msg": "✅ " + nice_msg}
                             else:
-                                toast_spot.components.v1.html(_toast_html(str(msg), "error"), height=72)
+                                toast_spot.markdown(_toast_html(str(msg), "error"), unsafe_allow_html=True)
                                 st.session_state["bet_flash"] = {"kind": "error", "msg": "❌ " + str(msg)}
 
                             # pequeno delay para deixar o browser iniciar o áudio/mostrar toast
