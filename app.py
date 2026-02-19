@@ -31,6 +31,9 @@ st.set_page_config(
 render_global_ui(icon_path="icon.png", logo_path="armadura.png")
 is_mobile = init_mobile_detection()
 
+from modules.admin_gate import admin_top_button
+admin_top_button()
+
 # -------------------------------------------------
 # CONSTANTS
 # -------------------------------------------------
