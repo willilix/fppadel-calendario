@@ -25,6 +25,18 @@ def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
     return close
 
 
+def _flash_render():
+    """Render one-time flash message saved in session_state."""
+    msg = st.session_state.get("bet_flash_msg")
+    if not msg:
+        return
+    if str(msg).startswith("✅"):
+        st.success(msg)
+    else:
+        st.error(msg)
+    st.session_state.pop("bet_flash_msg", None)
+
+
 def render_betting():
     st.title("Apostas do 60")
 
@@ -81,12 +93,7 @@ def render_betting():
     # -----------------
     with tabs[0]:
         # Flash message (mostra após rerun)
-if "bet_flash_msg" in st.session_state:
-    if st.session_state["bet_flash_msg"].startswith("✅"):
-        st.success(st.session_state["bet_flash_msg"])
-    else:
-        st.error(st.session_state["bet_flash_msg"])
-    del st.session_state["bet_flash_msg"]
+        _flash_render()
 
         show_all = st.toggle("Mostrar resolvidos / histórico", value=False, key="mkt_show_all")
         markets_all = list_markets(limit=200)
@@ -122,15 +129,15 @@ if "bet_flash_msg" in st.session_state:
                         opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
                         amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
                         if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
-    ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
+                            ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
 
-    if ok:
-        st.session_state["bet_flash_msg"] = f"✅ Aposta submetida com sucesso ({int(amt):,})"
-    else:
-        st.session_state["bet_flash_msg"] = f"❌ {msg}"
+                            if ok:
+                                shown_amt = f"{int(amt):,}".replace(",", " ")
+                                st.session_state["bet_flash_msg"] = f"✅ Aposta submetida com sucesso ({shown_amt})"
+                            else:
+                                st.session_state["bet_flash_msg"] = f"❌ {msg}"
 
-    st.rerun()
-
+                            st.rerun()
                     else:
                         ro = m.get("resolved_option")
                         if ro:
