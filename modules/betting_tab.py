@@ -109,6 +109,9 @@ def render_betting():
         admin_panel_create_user()
         admin_panel_disable_user()
 
+from modules.betting_auth import admin_panel_list_users
+admin_panel_list_users()
+
         st.divider()
         st.markdown("### Admin: criar mercado")
         if not is_admin:
