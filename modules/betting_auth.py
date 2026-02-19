@@ -49,7 +49,7 @@ def logout():
 
 def login_form():
     st.subheader("Login")
-    name = st.text_input("Nome", key="bet_login_name")
+    name = st.text_input("User", key="bet_login_name")
     pin = st.text_input("PIN", type="password", key="bet_login_pin")
     if st.button("Entrar", use_container_width=True, key="bet_login_btn"):
         user_id = _slug_user_id(name)
@@ -78,7 +78,7 @@ def signup_form():
         st.warning("Auto-registo indisponível: define BETTING_INVITE_CODE nos Secrets.")
         return
 
-    display_name = st.text_input("Nome", key="bet_signup_name")
+    display_name = st.text_input("User", key="bet_signup_name")
     pin = st.text_input("PIN (mín. 4)", type="password", key="bet_signup_pin")
     invite = st.text_input("Invite code", type="password", key="bet_signup_invite")
 
