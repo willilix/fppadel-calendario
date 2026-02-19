@@ -22,7 +22,7 @@ from modules.rankings_tab import render_rankings
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="FPPadel Calendário",
+    page_title="App do 60",
     page_icon="icon.png",
     layout="wide",
     initial_sidebar_state="collapsed",
