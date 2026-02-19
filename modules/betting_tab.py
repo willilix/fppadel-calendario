@@ -114,9 +114,15 @@ def render_betting():
                         opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
                         amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
                         if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
-                            ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
-                            (st.success if ok else st.error)(msg)
-                            st.rerun()
+    ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
+
+    if ok:
+        st.session_state["bet_flash_msg"] = f"✅ Aposta submetida com sucesso ({int(amt):,})"
+    else:
+        st.session_state["bet_flash_msg"] = f"❌ {msg}"
+
+    st.rerun()
+
                     else:
                         ro = m.get("resolved_option")
                         if ro:
