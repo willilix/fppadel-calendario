@@ -7,6 +7,8 @@ import streamlit as st
 
 from modules.betting_firestore import get_user, create_user, set_user_disabled
 
+from modules.betting_firestore import fs_client, get_balance
+
 def _slug_user_id(name: str) -> str:
     name = (name or "").strip().lower()
     name = re.sub(r"[^a-z0-9_-]+", "_", name)
@@ -95,3 +97,35 @@ def admin_panel_disable_user():
     if st.button("Aplicar", key="bet_disable_apply"):
         set_user_disabled(user_id, disabled)
         st.success("Atualizado.")
+
+def admin_panel_list_users():
+    st.markdown("### Admin: listar utilizadores")
+
+    admin_pin = st.text_input("Admin PIN (listar)", type="password", key="bet_admin_pin_list")
+    if admin_pin != (st.secrets.get("BETTING_ADMIN_PIN") or ""):
+        return
+
+    db = fs_client()
+    users = list(db.collection("users").stream())
+
+    if not users:
+        st.info("Sem utilizadores.")
+        return
+
+    for u in users:
+        data = u.to_dict()
+        uid = data.get("user_id")
+        bal = get_balance(uid)
+        disabled = data.get("is_disabled")
+
+        col1, col2, col3 = st.columns([3,1,1])
+        with col1:
+            st.write(f"**{data.get('display_name')}** ({uid})")
+        with col2:
+            st.write(f"Saldo: {bal}")
+        with col3:
+            if st.button("Apagar", key=f"del_{uid}"):
+                db.collection("users").document(uid).delete()
+                db.collection("wallets").document(uid).delete()
+                st.success(f"{uid} apagado.")
+                st.rerun()
