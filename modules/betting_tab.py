@@ -10,6 +10,13 @@ from modules.betting_auth import (
     admin_panel_create_user, admin_panel_disable_user, admin_panel_list_users
 )
 
+# Admin gate (global)
+try:
+    from modules.admin_gate import is_admin
+except Exception:
+    def is_admin() -> bool:
+        return False
+
 
 def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
     tz = dt.timezone.utc
@@ -22,9 +29,10 @@ def render_betting():
     st.title("Mercados (play-money)")
 
     u = current_user()
+    admin_enabled = is_admin()
 
     # -------------------------------------------------
-    # BOOTSTRAP / AUTH
+    # AUTH (sem login)
     # -------------------------------------------------
     if not u:
         c1, c2 = st.columns(2)
@@ -34,23 +42,20 @@ def render_betting():
             signup_form()
 
         st.divider()
-        with st.expander("Admin (bootstrap) — criar/gerir utilizadores", expanded=False):
-            st.caption("Se não quiseres auto-registo, usa esta área para criar contas manualmente.")
+        st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
 
-            admin_pin_chk = st.text_input("Admin PIN (mostrar invite)", type="password", key="bet_admin_pin_show_invite_boot")
-            if admin_pin_chk == (st.secrets.get("BETTING_ADMIN_PIN") or ""):
+        # ✅ Admin bootstrap escondido para não-admin
+        if admin_enabled:
+            with st.expander("Admin (bootstrap) — gerir utilizadores", expanded=False):
+                st.caption("Só visível em modo Admin global.")
                 invite = (st.secrets.get("BETTING_INVITE_CODE") or "").strip()
                 st.markdown("**Invite code (para partilhar):**")
                 st.code(invite or "(BETTING_INVITE_CODE não definido)", language="text")
-                st.caption("Partilha este código com o grupo para poderem criar conta.")
-            else:
-                st.caption("Introduz o Admin PIN para mostrar o invite code.")
+                st.divider()
+                admin_panel_create_user()
+                admin_panel_disable_user()
+                admin_panel_list_users()
 
-            st.divider()
-            admin_panel_create_user()
-            admin_panel_disable_user()
-            admin_panel_list_users()
-        st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
         return
 
     # -------------------------------------------------
@@ -67,14 +72,16 @@ def render_betting():
             logout()
             st.rerun()
 
-    tabs = st.tabs(["Mercados", "Carteira", "Admin"])
+    # Tabs (Admin só aparece se estiver em modo admin global)
+    tab_names = ["Mercados", "Carteira"] + (["Admin"] if admin_enabled else [])
+    tabs = st.tabs(tab_names)
 
     # -----------------
     # Mercados
     # -----------------
     with tabs[0]:
         show_all = st.toggle("Mostrar resolvidos / histórico", value=False, key="mkt_show_all")
-        markets_all = list_markets(limit=100)
+        markets_all = list_markets(limit=200)
 
         if show_all:
             markets = markets_all
@@ -82,16 +89,18 @@ def render_betting():
             markets = [mm for mm in markets_all if mm.get("status") == "open"]
 
         if not markets:
-            st.info("Ainda não há mercados.")
+            st.info("Ainda não há mercados para mostrar.")
         else:
             for m in markets:
-                status = m.get("status")
+                status = (m.get("status") or "").upper()
                 title = m.get("title", "(sem título)")
                 close_time = m.get("close_time")
                 close_str = close_time.isoformat() if close_time else "—"
 
-                with st.expander(f"{title}  ·  {status.upper()}  ·  fecha: {close_str}", expanded=False):
+                with st.expander(f"{title}  ·  {status}  ·  fecha: {close_str}", expanded=False):
+                    st.caption(f"ID: `{m.get('market_id','')}`")
                     st.write(m.get("description", ""))
+
                     options = m.get("options") or []
                     totals = m.get("totals") or {}
                     total_pool = int(m.get("total_pool") or 0)
@@ -101,7 +110,7 @@ def render_betting():
                     for opt in options:
                         st.write(f"- {opt}: {int(totals.get(opt) or 0):,}".replace(",", " "))
 
-                    if status == "open":
+                    if (m.get("status") == "open") and options:
                         opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
                         amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
                         if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
@@ -130,30 +139,26 @@ def render_betting():
                 st.write(f"- {ts}: **{kind}** {amt:,}".replace(",", " "), f"· ref: {ref}")
 
     # -----------------
-    # Admin
+    # Admin (apenas se admin_enabled)
     # -----------------
-    with tabs[2]:
-        st.subheader("Admin")
-        st.caption("Criar mercados, resolver, cancelar, e gerir utilizadores. Protegido por Admin PIN.")
+    if admin_enabled:
+        with tabs[2]:
+            st.subheader("Admin")
+            st.caption("Só visível em modo Admin global.")
 
-        admin_pin = st.text_input("Admin PIN (mercados)", type="password", key="bet_admin_pin_markets")
-        is_admin = admin_pin == (st.secrets.get("BETTING_ADMIN_PIN") or "")
-
-        if is_admin:
+            # Mostrar invite code
             invite = (st.secrets.get("BETTING_INVITE_CODE") or "").strip()
             st.markdown("### Invite code (para partilhar)")
             st.code(invite or "(BETTING_INVITE_CODE não definido)", language="text")
 
-        st.divider()
-        admin_panel_create_user()
-        admin_panel_disable_user()
-        admin_panel_list_users()
+            st.divider()
+            st.markdown("### Utilizadores")
+            admin_panel_create_user()
+            admin_panel_disable_user()
+            admin_panel_list_users()
 
-        st.divider()
-        st.markdown("### Admin: criar mercado")
-        if not is_admin:
-            st.info("Introduz o Admin PIN para criar/resolver mercados.")
-        else:
+            st.divider()
+            st.markdown("### Criar mercado")
             title = st.text_input("Título", key="mkt_title")
             desc = st.text_area("Descrição", key="mkt_desc")
             opts_raw = st.text_input("Opções (separadas por ;)", value="SIM;NÃO", key="mkt_opts")
@@ -173,23 +178,19 @@ def render_betting():
                     st.rerun()
 
             st.divider()
-            st.markdown("### Admin: resolver / cancelar mercado")
+            st.markdown("### Resolver / cancelar mercado")
 
-            # Selectbox de mercados (sem precisar colar IDs)
-            all_markets = list_markets(limit=100)
-            candidates = [
-                m for m in all_markets
-                if (m.get("status") not in ("resolved", "cancelled"))
-            ]
+            all_markets = list_markets(limit=200)
+            candidates = [m for m in all_markets if m.get("status") in ("open", "closed")]
 
             if not candidates:
                 st.info("Não há mercados pendentes (abertos/por resolver).")
             else:
                 def _label(m):
-                    title = m.get("title", "(sem título)")
-                    status = (m.get("status") or "").upper()
-                    mid = m.get("market_id") or ""
-                    return f"{title} · {status} · {mid}"
+                    title2 = m.get("title", "(sem título)")
+                    status2 = (m.get("status") or "").upper()
+                    mid2 = m.get("market_id") or ""
+                    return f"{title2} · {status2} · {mid2}"
 
                 labels = [_label(m) for m in candidates]
                 sel_label = st.selectbox("Escolhe o mercado", labels, key="admin_market_pick")
@@ -221,54 +222,50 @@ def render_betting():
                                 (st.success if ok else st.error)(msg)
                                 st.rerun()
 
-
             st.divider()
-            st.markdown("### Admin: apagar mercado")
+            st.markdown("### Apagar mercado")
             st.caption("Apaga mercados resolvidos/cancelados (inclui as apostas desse mercado).")
 
-            if not is_admin:
-                st.info("Introduz o Admin PIN para apagar mercados.")
+            db = fs_client()
+            all_for_delete = list_markets(limit=300)
+            deletable = [mm for mm in all_for_delete if mm.get("status") in ("resolved", "cancelled")]
+
+            if not deletable:
+                st.info("Não há mercados resolvidos/cancelados para apagar.")
             else:
-                db = fs_client()
-                all_for_delete = list_markets(limit=200)
-                deletable = [mm for mm in all_for_delete if mm.get("status") in ("resolved", "cancelled")]
+                def _dlabel(m):
+                    title3 = m.get("title", "(sem título)")
+                    status3 = (m.get("status") or "").upper()
+                    mid3 = m.get("market_id") or ""
+                    return f"{title3} · {status3} · {mid3}"
 
-                if not deletable:
-                    st.info("Não há mercados resolvidos/cancelados para apagar.")
-                else:
-                    def _dlabel(m):
-                        title = m.get("title", "(sem título)")
-                        status = (m.get("status") or "").upper()
-                        mid = m.get("market_id") or ""
-                        return f"{title} · {status} · {mid}"
+                dlabels = [_dlabel(mm) for mm in deletable]
+                dsel = st.selectbox("Escolhe o mercado para apagar", dlabels, key="admin_market_delete_pick")
+                didx = dlabels.index(dsel)
+                del_market_id = deletable[didx].get("market_id")
 
-                    dlabels = [_dlabel(mm) for mm in deletable]
-                    dsel = st.selectbox("Escolhe o mercado para apagar", dlabels, key="admin_market_delete_pick")
-                    didx = dlabels.index(dsel)
-                    del_market_id = deletable[didx].get("market_id")
+                st.warning("Isto remove o mercado e as bets associadas. Não dá para desfazer.")
+                confirm = st.checkbox("Confirmo que quero apagar este mercado", key="admin_market_delete_confirm")
 
-                    st.warning("Isto remove o mercado e as bets associadas. Não dá para desfazer.")
-                    confirm = st.checkbox("Confirmo que quero apagar este mercado", key="admin_market_delete_confirm")
+                if st.button("Apagar mercado", type="primary", disabled=not confirm, key="admin_market_delete_btn"):
+                    mref = db.collection("markets").document(del_market_id)
 
-                    if st.button("Apagar mercado", type="primary", disabled=not confirm, key="admin_market_delete_btn"):
-                        mref = db.collection("markets").document(del_market_id)
-
-                        # apagar bets (em batches)
-                        bets = list(mref.collection("bets").stream())
-                        batch = db.batch()
-                        ops = 0
-                        for bdoc in bets:
-                            batch.delete(bdoc.reference)
-                            ops += 1
-                            if ops >= 450:
-                                batch.commit()
-                                batch = db.batch()
-                                ops = 0
-                        if ops:
+                    # apagar bets em batches
+                    bets = list(mref.collection("bets").stream())
+                    batch = db.batch()
+                    ops = 0
+                    for bdoc in bets:
+                        batch.delete(bdoc.reference)
+                        ops += 1
+                        if ops >= 450:
                             batch.commit()
+                            batch = db.batch()
+                            ops = 0
+                    if ops:
+                        batch.commit()
 
-                        # apagar mercado
-                        mref.delete()
+                    # apagar mercado
+                    mref.delete()
 
-                        st.success(f"Mercado apagado: {del_market_id}")
-                        st.rerun()
+                    st.success(f"Mercado apagado: {del_market_id}")
+                    st.rerun()
