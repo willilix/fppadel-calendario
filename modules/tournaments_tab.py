@@ -191,9 +191,13 @@ def render_tournaments(is_mobile: bool):
 
         st.divider()
 
-    # ------------------------
-    # ORGANIZADOR
-    # ------------------------
+# ------------------------
+# ORGANIZADOR (só modo admin global)
+# ------------------------
+if is_admin():
+    if "admin_ok" not in st.session_state:
+        st.session_state.admin_ok = False
+
     st.markdown("### 🔒 Área do Organizador")
 
     admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
