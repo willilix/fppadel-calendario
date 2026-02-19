@@ -36,6 +36,17 @@ def render_betting():
         st.divider()
         with st.expander("Admin (bootstrap) — criar/gerir utilizadores", expanded=False):
             st.caption("Se não quiseres auto-registo, usa esta área para criar contas manualmente.")
+
+            admin_pin_chk = st.text_input("Admin PIN (mostrar invite)", type="password", key="bet_admin_pin_show_invite_boot")
+            if admin_pin_chk == (st.secrets.get("BETTING_ADMIN_PIN") or ""):
+                invite = (st.secrets.get("BETTING_INVITE_CODE") or "").strip()
+                st.markdown("**Invite code (para partilhar):**")
+                st.code(invite or "(BETTING_INVITE_CODE não definido)", language="text")
+                st.caption("Partilha este código com o grupo para poderem criar conta.")
+            else:
+                st.caption("Introduz o Admin PIN para mostrar o invite code.")
+
+            st.divider()
             admin_panel_create_user()
             admin_panel_disable_user()
             admin_panel_list_users()
@@ -120,6 +131,11 @@ def render_betting():
 
         admin_pin = st.text_input("Admin PIN (mercados)", type="password", key="bet_admin_pin_markets")
         is_admin = admin_pin == (st.secrets.get("BETTING_ADMIN_PIN") or "")
+
+        if is_admin:
+            invite = (st.secrets.get("BETTING_INVITE_CODE") or "").strip()
+            st.markdown("### Invite code (para partilhar)")
+            st.code(invite or "(BETTING_INVITE_CODE não definido)", language="text")
 
         st.divider()
         admin_panel_create_user()
