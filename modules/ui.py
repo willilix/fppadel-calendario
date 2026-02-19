@@ -279,7 +279,7 @@ a:hover { text-decoration: underline; }
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    border-radius: 26px;
+    border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(255,255,255,0.05);
     font-size: 0.78rem;
@@ -364,7 +364,7 @@ div[role="radiogroup"]{
   gap: 10px !important;
   align-items: center !important;
   padding: 10px 12px !important;
-  border-radius: 999px !important;
+  border-radius: 26px !important;
   background: rgba(255,255,255,0.06) !important;
   border: 1px solid rgba(255,255,255,0.10) !important;
   box-shadow: 0 10px 30px rgba(0,0,0,0.30) !important;
