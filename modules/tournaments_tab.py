@@ -191,67 +191,67 @@ def render_tournaments(is_mobile: bool):
 
         st.divider()
 
-# ------------------------
-# ORGANIZADOR (só modo admin global)
-# ------------------------
-if is_admin():
-    if "admin_ok" not in st.session_state:
-        st.session_state.admin_ok = False
+    # ------------------------
+    # ORGANIZADOR (só modo admin global)
+    # ------------------------
+    if is_admin():
+        if "admin_ok" not in st.session_state:
+            st.session_state.admin_ok = False
 
-    st.markdown("### 🔒 Área do Organizador")
+        st.markdown("### 🔒 Área do Organizador")
 
-    admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
-    if admin_pw is None:
-        st.warning("Define `ADMIN_PASSWORD` em Secrets para ativar login.")
-        return
+        admin_pw = st.secrets.get("ADMIN_PASSWORD", None)
+        if admin_pw is None:
+            st.warning("Define `ADMIN_PASSWORD` em Secrets para ativar login.")
+            return
 
-    if not st.session_state.admin_ok:
-        pw = st.text_input("Password", type="password")
-        if st.button("Entrar"):
-            if pw == admin_pw:
-                st.session_state.admin_ok = True
-                st.rerun()
+        if not st.session_state.admin_ok:
+            pw = st.text_input("Password", type="password")
+            if st.button("Entrar"):
+                if pw == admin_pw:
+                    st.session_state.admin_ok = True
+                    st.rerun()
+                else:
+                    st.error("Password inválida.")
+            return
+
+        try:
+            df_insc = read_sheet()
+        except Exception as e:
+            st.error("Erro ao ler inscrições da Google Sheet.")
+            st.exception(e)
+            return
+
+        if df_insc.empty:
+            st.info("Ainda não há inscrições.")
+            return
+
+        torneio_ids = (
+            sorted(df_insc["torneio_id"].astype(str).unique().tolist())
+            if "torneio_id" in df_insc.columns
+            else []
+        )
+        sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
+
+        view = df_insc.copy()
+        if sel != "(Todos)" and "torneio_id" in view.columns:
+            view = view[view["torneio_id"].astype(str) == sel]
+
+        st.dataframe(
+            view.drop(columns=[c for c in ["storage"] if c in view.columns]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("### Fotos (últimas 12)")
+        tail = view.tail(12)
+
+        for _, r in tail.iterrows():
+            st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
+            foto_url = (r.get("foto_url", "") or "").strip()
+            if foto_url:
+                st.image(foto_url, use_container_width=True)
+                st.markdown(f"[Abrir no Dropbox]({foto_url})")
             else:
-                st.error("Password inválida.")
-        return
-
-    try:
-        df_insc = read_sheet()
-    except Exception as e:
-        st.error("Erro ao ler inscrições da Google Sheet.")
-        st.exception(e)
-        return
-
-    if df_insc.empty:
-        st.info("Ainda não há inscrições.")
-        return
-
-    torneio_ids = (
-        sorted(df_insc["torneio_id"].astype(str).unique().tolist())
-        if "torneio_id" in df_insc.columns
-        else []
-    )
-    sel = st.selectbox("Filtrar por torneio", ["(Todos)"] + torneio_ids)
-
-    view = df_insc.copy()
-    if sel != "(Todos)" and "torneio_id" in view.columns:
-        view = view[view["torneio_id"].astype(str) == sel]
-
-    st.dataframe(
-        view.drop(columns=[c for c in ["storage"] if c in view.columns]),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.markdown("### Fotos (últimas 12)")
-    tail = view.tail(12)
-
-    for _, r in tail.iterrows():
-        st.write(f"**{r.get('nome','')}** — {r.get('telefone','')} · {r.get('timestamp','')}")
-        foto_url = (r.get("foto_url", "") or "").strip()
-        if foto_url:
-            st.image(foto_url, use_container_width=True)
-            st.markdown(f"[Abrir no Dropbox]({foto_url})")
-        else:
-            st.caption("Sem foto_url guardado.")
-        st.divider()
+                st.caption("Sem foto_url guardado.")
+            st.divider()
