@@ -18,13 +18,16 @@ def _admin_login(pin: str) -> bool:
 
 def admin_top_button():
     """
-    Botão fixo no topo direito (por cima do logo) com estado ON/OFF.
+    Mostra um “badge” Admin ON/OFF + botão 🔒 Admin no canto superior direito.
+    O popover do PIN abre a partir desse botão, no mesmo sítio.
     """
-    # CSS: fixo no topo direito
+
+    # CSS: fixa o container que contém o marcador .admin-fixed-root
     st.markdown(
         """
         <style>
-        .admin-fixed {
+        /* Encontrar o bloco que contém o marcador e fixá-lo no topo direito */
+        div[data-testid="stVerticalBlock"] > div:has(div.admin-fixed-root) {
             position: fixed;
             top: 14px;
             right: 18px;
@@ -39,6 +42,13 @@ def admin_top_button():
             -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.12);
         }
+
+        /* Remover espaçamento extra do streamlit dentro desse bloco fixo */
+        div[data-testid="stVerticalBlock"] > div:has(div.admin-fixed-root) > div {
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
         .admin-pill {
             font-size: 12px;
             padding: 4px 10px;
@@ -51,55 +61,36 @@ def admin_top_button():
         .admin-pill.on { background: rgba(34,197,94,0.22); }
         .admin-pill.off { background: rgba(239,68,68,0.18); }
 
-        /* manter o wrapper no topo mesmo com header do streamlit */
         @media (max-width: 640px) {
-            .admin-fixed { right: 10px; top: 10px; }
+            div[data-testid="stVerticalBlock"] > div:has(div.admin-fixed-root) {
+                right: 10px;
+                top: 10px;
+            }
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    # “âncora” HTML para posicionar; os widgets vêm logo a seguir
-    st.markdown(
-        f"""
-        <div class="admin-fixed">
-          <div class="admin-pill {'on' if is_admin() else 'off'}">
-            {'Admin: ON' if is_admin() else 'Admin: OFF'}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Colocar os widgets “por cima” usando um container vazio (Streamlit não permite button dentro do HTML)
-    # Trick: usar um container e empurrar com CSS para o mesmo sítio.
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stVerticalBlock"] > div:has(> div.admin-widget-anchor){
-            position: fixed;
-            top: 14px;
-            right: 18px;
-            z-index: 100000;
-        }
-        .admin-widget-anchor { display: inline-block; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    # Este container é o que vai ficar "fixo" via CSS (porque tem o marcador)
     with st.container():
-        st.markdown('<div class="admin-widget-anchor"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="admin-fixed-root"></div>', unsafe_allow_html=True)
 
+        # badge de estado
+        st.markdown(
+            f'<div class="admin-pill {"on" if is_admin() else "off"}">'
+            f'{"Admin: ON" if is_admin() else "Admin: OFF"}'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # botão / popover no mesmo bloco fixo
         if is_admin():
-            # botão sair
             if st.button("Sair", key="admin_fixed_logout"):
                 admin_logout()
                 st.rerun()
         else:
-            # popover login
-            with st.popover("🔒 Admin", use_container_width=False):
+            with st.popover("🔒 Admin"):
                 pin = st.text_input("Admin PIN", type="password", key="admin_fixed_pin")
                 if st.button("Entrar", type="primary", key="admin_fixed_login"):
                     if _admin_login(pin):
