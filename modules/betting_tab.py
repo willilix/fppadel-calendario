@@ -6,7 +6,7 @@ from modules.betting_firestore import (
     resolve_market, cancel_market, get_balance, list_ledger
 )
 from modules.betting_auth import (
-    current_user, login_form, logout,
+    current_user, login_form, signup_form, logout,
     admin_panel_create_user, admin_panel_disable_user, admin_panel_list_users
 )
 
@@ -24,18 +24,22 @@ def render_betting():
     u = current_user()
 
     # -------------------------------------------------
-    # BOOTSTRAP: permitir criar os primeiros utilizadores
+    # BOOTSTRAP / AUTH
     # -------------------------------------------------
     if not u:
-        login_form()
-        st.divider()
-        st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
+        c1, c2 = st.columns(2)
+        with c1:
+            login_form()
+        with c2:
+            signup_form()
 
-        st.subheader("Admin (bootstrap)")
-        st.caption("Cria utilizadores iniciais. Protegido por Admin PIN.")
-        admin_panel_create_user()
-        admin_panel_disable_user()
-        admin_panel_list_users()
+        st.divider()
+        with st.expander("Admin (bootstrap) — criar/gerir utilizadores", expanded=False):
+            st.caption("Se não quiseres auto-registo, usa esta área para criar contas manualmente.")
+            admin_panel_create_user()
+            admin_panel_disable_user()
+            admin_panel_list_users()
+        st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
         return
 
     # -------------------------------------------------
