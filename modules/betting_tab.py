@@ -26,7 +26,7 @@ def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
 
 
 def render_betting():
-    st.title("Mercados (play-money)")
+    st.title("Apostas do 60")
 
     u = current_user()
     admin_enabled = is_admin()
@@ -73,7 +73,7 @@ def render_betting():
             st.rerun()
 
     # Tabs (Admin só aparece se estiver em modo admin global)
-    tab_names = ["Mercados", "Carteira"] + (["Admin"] if admin_enabled else [])
+    tab_names = ["Apostas", "Carteira"] + (["Admin"] if admin_enabled else [])
     tabs = st.tabs(tab_names)
 
     # -----------------
