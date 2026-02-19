@@ -1,4 +1,5 @@
 import datetime as dt
+import time
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -26,82 +27,56 @@ def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
     return close
 
 
+def _toast_html(msg: str, kind: str = "success") -> str:
+    bg = "rgba(34,197,94,0.22)" if kind == "success" else "rgba(239,68,68,0.18)"
+    border = "rgba(34,197,94,0.45)" if kind == "success" else "rgba(239,68,68,0.40)"
+    icon = "✅" if kind == "success" else "❌"
+    return f"""<style>
+  .bet-toast-inline {{
+    width: 100%;
+    margin: 8px 0 12px 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: {bg};
+    border: 1px solid {border};
+    color: rgba(255,255,255,0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.20);
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    animation: slideInY 240ms ease-out;
+  }}
+  @keyframes slideInY {{
+    from {{ transform: translateY(10px); opacity: 0; }}
+    to   {{ transform: translateY(0); opacity: 1; }}
+  }}
+</style>
+<div class="bet-toast-inline"><b>{icon}</b> {msg}</div>
+"""
+
+
 def _flash_render():
-    """Render one-time flash message saved in session_state (com animação + confetti + som)."""
+    """Mostra um toast uma vez (após rerun) no topo da tab."""
     payload = st.session_state.get("bet_flash")
     if not payload:
         return
-
-    kind = payload.get("kind", "info")
+    kind = payload.get("kind", "success")
     msg = str(payload.get("msg", ""))
 
-    # --- Slide-in toast (HTML/CSS) ---
-    toast_bg = "rgba(34,197,94,0.22)" if kind == "success" else "rgba(239,68,68,0.18)"
-    toast_border = "rgba(34,197,94,0.45)" if kind == "success" else "rgba(239,68,68,0.40)"
+    # 1) Toast nativo (aparece sempre; bom no mobile)
+    try:
+        st.toast(msg, icon="✅" if kind == "success" else "❌")
+    except Exception:
+        pass
 
-    components.html(
-        f"""
-        <style>
-          .bet-toast {{
-            position: fixed;
-            right: 18px;
-            bottom: 18px;
-            z-index: 999999;
-            max-width: min(520px, calc(100vw - 36px));
-            padding: 12px 14px;
-            border-radius: 14px;
-            background: {toast_bg};
-            border: 1px solid {toast_border};
-            color: rgba(255,255,255,0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            box-shadow: 0 16px 40px rgba(0,0,0,0.35);
-            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-            animation: slideIn 260ms ease-out, fadeOut 260ms ease-in 2.6s forwards;
-          }}
-          .bet-toast .t {{
-            font-size: 14px;
-            line-height: 1.25;
-            margin: 0;
-          }}
-          @keyframes slideIn {{
-            from {{ transform: translateX(18px); opacity: 0; }}
-            to   {{ transform: translateX(0); opacity: 1; }}
-          }}
-          @keyframes fadeOut {{
-            to {{ opacity: 0; transform: translateY(6px); }}
-          }}
-        </style>
-        <div class="bet-toast"><p class="t">{msg}</p></div>
-        """,
-        height=0,
-    )
+    # 2) Slide-in inline (visual)
+    components.html(_toast_html(msg, kind), height=72)
 
-    # --- Confetti (simples) ---
-    if kind == "success":
-        try:
-            st.balloons()
-        except Exception:
-            pass
-
-    # --- Click sound (autoplay; pode ser bloqueado no iOS, mas funciona em muitos browsers desktop) ---
-    if kind == "success":
-        # Tiny click WAV (very short), base64 encoded
-        click_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
-        components.html(
-            f"""
-            <audio autoplay>
-              <source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav">
-            </audio>
-            """,
-            height=0,
-        )
-
-    # Clear after showing once
     st.session_state.pop("bet_flash", None)
 
 
 def render_betting():
+
 
     st.title("Apostas do 60")
 
@@ -193,15 +168,34 @@ def render_betting():
                     if (m.get("status") == "open") and options:
                         opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
                         amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
+                        toast_spot = st.empty()
                         if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
                             ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
 
                             if ok:
                                 shown_amt = f"{int(amt):,}".replace(",", " ")
-                                st.session_state["bet_flash"] = {"kind":"success","msg": f"✅ Aposta submetida com sucesso ({shown_amt})"}
+                                nice_msg = f"Aposta submetida com sucesso ({shown_amt})"
+                                # Toast inline exatamente onde o user está (dentro do expander)
+                                toast_spot.components.v1.html(_toast_html(nice_msg, "success"), height=72)
+                                # Confetti
+                                try:
+                                    st.balloons()
+                                except Exception:
+                                    pass
+                                # Som (nota: no iOS pode ser bloqueado; em desktop normalmente toca)
+                                click_wav_b64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
+                                toast_spot.components.v1.html(
+                                    f'<audio autoplay><source src="data:audio/wav;base64,{click_wav_b64}" type="audio/wav"></audio>',
+                                    height=0,
+                                )
+                                # Também guardar para aparecer no topo após rerun (fallback)
+                                st.session_state["bet_flash"] = {"kind": "success", "msg": "✅ " + nice_msg}
                             else:
-                                st.session_state["bet_flash"] = {"kind":"error","msg": f"❌ {msg}"}
+                                toast_spot.components.v1.html(_toast_html(str(msg), "error"), height=72)
+                                st.session_state["bet_flash"] = {"kind": "error", "msg": "❌ " + str(msg)}
 
+                            # pequeno delay para deixar o browser iniciar o áudio/mostrar toast
+                            time.sleep(0.6)
                             st.rerun()
                     else:
                         ro = m.get("resolved_option")
