@@ -84,7 +84,6 @@ def render_betting():
                 close_str = close_time.isoformat() if close_time else "—"
 
                 with st.expander(f"{title}  ·  {status.upper()}  ·  fecha: {close_str}", expanded=False):
-                    st.caption(f"ID: `{m['market_id']}`")
                     st.write(m.get("description", ""))
                     options = m.get("options") or []
                     totals = m.get("totals") or {}
@@ -168,25 +167,49 @@ def render_betting():
 
             st.divider()
             st.markdown("### Admin: resolver / cancelar mercado")
-            market_id = st.text_input("market_id", placeholder="ex: mkt_...", key="admin_market_id")
-            if market_id:
-                m = get_market(market_id)
+
+            # Selectbox de mercados (sem precisar colar IDs)
+            all_markets = list_markets(limit=100)
+            candidates = [
+                m for m in all_markets
+                if (m.get("status") not in ("resolved", "cancelled"))
+            ]
+
+            if not candidates:
+                st.info("Não há mercados pendentes (abertos/por resolver).")
+            else:
+                def _label(m):
+                    title = m.get("title", "(sem título)")
+                    status = (m.get("status") or "").upper()
+                    mid = m.get("market_id") or ""
+                    return f"{title} · {status} · {mid}"
+
+                labels = [_label(m) for m in candidates]
+                sel_label = st.selectbox("Escolhe o mercado", labels, key="admin_market_pick")
+                sel_idx = labels.index(sel_label)
+                market_id = candidates[sel_idx].get("market_id")
+
+                m = get_market(market_id) if market_id else None
                 if not m:
-                    st.error("Não existe.")
+                    st.error("Não consegui carregar o mercado selecionado.")
                 else:
+                    st.write("**ID:**", f"`{market_id}`")
                     st.write("**Título:**", m.get("title"))
                     st.write("**Status:**", m.get("status"))
                     options = m.get("options") or []
-                    win = st.selectbox("Opção vencedora", options, key="admin_win_opt")
+                    if not options:
+                        st.error("Mercado sem opções.")
+                    else:
+                        win = st.selectbox("Opção vencedora", options, key="admin_win_opt")
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        if st.button("Resolver e pagar", type="primary"):
-                            ok, msg = resolve_market(market_id, win)
-                            (st.success if ok else st.error)(msg)
-                            st.rerun()
-                    with c2:
-                        if st.button("Cancelar e devolver", type="secondary"):
-                            ok, msg = cancel_market(market_id)
-                            (st.success if ok else st.error)(msg)
-                            st.rerun()
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("Resolver e pagar", type="primary"):
+                                ok, msg = resolve_market(market_id, win)
+                                (st.success if ok else st.error)(msg)
+                                st.rerun()
+                        with c2:
+                            if st.button("Cancelar e devolver", type="secondary"):
+                                ok, msg = cancel_market(market_id)
+                                (st.success if ok else st.error)(msg)
+                                st.rerun()
