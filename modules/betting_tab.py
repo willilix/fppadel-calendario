@@ -27,6 +27,76 @@ def _parse_close_time(days_ahead: int, hour: int) -> dt.datetime:
     return close
 
 
+def _now_utc() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _remaining_seconds(close_time: dt.datetime | None) -> int | None:
+    if not close_time:
+        return None
+    try:
+        # ensure tz-aware
+        if close_time.tzinfo is None:
+            close_time = close_time.replace(tzinfo=dt.timezone.utc)
+    except Exception:
+        pass
+    diff = close_time - _now_utc()
+    return int(diff.total_seconds())
+
+
+def _format_remaining(close_time: dt.datetime | None) -> tuple[str, bool]:
+    """Returns (label, urgent)."""
+    secs = _remaining_seconds(close_time)
+    if secs is None:
+        return ("—", False)
+    if secs <= 0:
+        return ("Encerrado", True)
+
+    urgent = secs <= 30 * 60  # < 30 min
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _ = divmod(rem, 60)
+
+    if days > 0:
+        return (f"{days}d {hours}h", urgent)
+    if hours > 0:
+        return (f"{hours}h {minutes}m", urgent)
+    return (f"{minutes}m", urgent)
+
+
+def _market_header_html(title: str, status_raw: str, close_time: dt.datetime | None) -> str:
+    status = (status_raw or "").lower()
+    remaining, urgent = _format_remaining(close_time)
+
+    if status == "open":
+        status_text = "OPEN"
+        status_color = "#22c55e"
+    elif status == "resolved":
+        status_text = "RESOLVIDO"
+        status_color = "#60a5fa"
+    elif status == "cancelled":
+        status_text = "CANCELADO"
+        status_color = "#f97316"
+    else:
+        status_text = status.upper() if status else "—"
+        status_color = "#ef4444"
+
+    rem_color = "#ef4444" if urgent else "rgba(255,255,255,0.60)"
+
+    return f"""<div style=\"display:flex;justify-content:space-between;align-items:center;gap:12px;\">
+      <div style=\"color:rgba(255,255,255,0.95);font-weight:650;line-height:1.15;\">{title}</div>
+      <div style=\"display:flex;align-items:center;gap:10px;white-space:nowrap;\">
+        <span style=\"color:{status_color};font-weight:800;letter-spacing:0.02em;\">{status_text}</span>
+        <span style=\"color:{rem_color};font-size:13px;font-weight:600;\">{('Fecha em ' + remaining) if status=='open' else remaining}</span>
+      </div>
+    </div>"""
+
+
+def _pct(part: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return (part / total) * 100.0
+
 def _toast_html(msg: str, kind: str = "success") -> str:
     bg = "rgba(34,197,94,0.22)" if kind == "success" else "rgba(239,68,68,0.18)"
     border = "rgba(34,197,94,0.45)" if kind == "success" else "rgba(239,68,68,0.40)"
@@ -135,6 +205,13 @@ def render_betting():
         # Flash message (mostra após rerun)
         _flash_render()
 
+        # Auto-refresh para countdown (a cada 30s)
+        components.html("""
+        <script>
+          setTimeout(function(){ window.parent.location.reload(); }, 30000);
+        </script>
+        """, height=0)
+
         show_all = st.toggle("Mostrar resolvidos / histórico", value=False, key="mkt_show_all")
         markets_all = list_markets(limit=200)
 
@@ -147,13 +224,14 @@ def render_betting():
             st.info("Ainda não há mercados para mostrar.")
         else:
             for m in markets:
-                status = (m.get("status") or "").upper()
+                status = (m.get("status") or "").upper()  # usado em alguns sítios de debug
                 title = m.get("title", "(sem título)")
                 close_time = m.get("close_time")
                 close_str = close_time.isoformat() if close_time else "—"
 
-                with st.expander(f"{title}  ·  {status}  ·  fecha: {close_str}", expanded=False):
+                with st.expander(f"{title}", expanded=False):
                     st.caption(f"ID: `{m.get('market_id','')}`")
+                    st.markdown(_market_header_html(title, m.get("status") or "", close_time), unsafe_allow_html=True)
                     st.write(m.get("description", ""))
 
                     options = m.get("options") or []
@@ -162,8 +240,16 @@ def render_betting():
 
                     st.write("**Pote total:**", f"{total_pool:,}".replace(",", " "))
 
+                    # Polymarket-style: percentagens por opção
                     for opt in options:
-                        st.write(f"- {opt}: {int(totals.get(opt) or 0):,}".replace(",", " "))
+                        amt_opt = int(totals.get(opt) or 0)
+                        pct = _pct(amt_opt, total_pool)
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.write(f"**{opt}** — {pct:0.1f}%")
+                            st.progress(min(max(pct / 100.0, 0.0), 1.0))
+                        with c2:
+                            st.write(f"{amt_opt:,}".replace(",", " "))
 
                     if (m.get("status") == "open") and options:
                         opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
