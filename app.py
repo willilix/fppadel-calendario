@@ -28,6 +28,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# --- TESTE FIRESTORE (temporário) ---
+import streamlit as st
+from modules.betting_firestore import fs_client
+
+try:
+    db = fs_client()
+    st.success("Firestore OK ✅")
+except Exception as e:
+    st.error(f"Firestore FAIL: {e}")
+    st.exception(e)
+# -------------------------------------
+
+
 render_global_ui(icon_path="icon.png", logo_path="armadura.png")
 is_mobile = init_mobile_detection()
 
