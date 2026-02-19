@@ -3,6 +3,7 @@ import streamlit as st
 
 from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
 
+from modules.admin_gate import is_admin
 
 class _BytesUpload:
     """Fallback object that mimics Streamlit's UploadedFile enough for our storage layer."""
