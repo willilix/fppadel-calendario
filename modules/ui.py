@@ -368,7 +368,12 @@ div[role="radiogroup"]{
   background: rgba(255,255,255,0.06) !important;
   border: 1px solid rgba(255,255,255,0.10) !important;
   box-shadow: 0 10px 30px rgba(0,0,0,0.30) !important;
-  width: fit-content !important;
+
+  width: 100% !important;
+  max-width: 100% !important;
+  flex-wrap: wrap !important;
+  justify-content: center !important;
+
   margin: 6px 0 22px 0 !important;
 }
 
@@ -454,35 +459,6 @@ def render_logo(logo_path: str = "armadura.png", subtitle: str = "App oficial do
     from { opacity:0; }
     to   { opacity:0.85; }
 }
-
-
-/* --- FIX MOBILE: Nav principal (pílula) ocupar 100% e não “vazar” --- */
-@media (max-width: 768px){
-  div[role="radiogroup"]{
-    width: 100% !important;
-    max-width: 100% !important;
-    flex-wrap: wrap !important;
-    justify-content: space-between !important;
-    box-sizing: border-box !important;
-  }
-  div[role="radiogroup"] > label{
-    flex: 1 1 calc(50% - 10px) !important;
-    min-width: 160px !important;
-    width: 100% !important;
-    display: flex !important;
-    justify-content: center !important;
-    box-sizing: border-box !important;
-  }
-}
-
-/* iPhone muito estreito: 1 por linha */
-@media (max-width: 420px){
-  div[role="radiogroup"] > label{
-    flex: 1 1 100% !important;
-    min-width: 0 !important;
-  }
-}
-
 
 </style>
         """,
