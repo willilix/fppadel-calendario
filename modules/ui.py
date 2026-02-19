@@ -455,6 +455,35 @@ def render_logo(logo_path: str = "armadura.png", subtitle: str = "App oficial do
     to   { opacity:0.85; }
 }
 
+
+/* --- FIX MOBILE: Nav principal (pílula) ocupar 100% e não “vazar” --- */
+@media (max-width: 768px){
+  div[role="radiogroup"]{
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-wrap: wrap !important;
+    justify-content: space-between !important;
+    box-sizing: border-box !important;
+  }
+  div[role="radiogroup"] > label{
+    flex: 1 1 calc(50% - 10px) !important;
+    min-width: 160px !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* iPhone muito estreito: 1 por linha */
+@media (max-width: 420px){
+  div[role="radiogroup"] > label{
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+
 </style>
         """,
         unsafe_allow_html=True,
