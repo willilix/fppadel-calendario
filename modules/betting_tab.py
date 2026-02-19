@@ -17,11 +17,17 @@ def render_betting():
     st.title("Mercados (play-money)")
 
     u = current_user()
-    if not u:
-        login_form()
-        st.divider()
-        st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
-        return
+if not u:
+    login_form()
+    st.divider()
+    st.caption("Sem dinheiro real. Moeda virtual com saldo e histórico.")
+
+    # ✅ Admin bootstrap: criar os primeiros utilizadores sem login
+    st.subheader("Admin (bootstrap)")
+    st.caption("Cria utilizadores iniciais. Protegido por Admin PIN.")
+    admin_panel_create_user()
+    admin_panel_disable_user()
+    return
 
     colA, colB, colC = st.columns([2,1,1])
     with colA:
