@@ -58,7 +58,7 @@ def _format_remaining(close_time: dt.datetime | None) -> tuple[str, bool]:
     minutes, _ = divmod(rem, 60)
 
     if days > 0:
-        return (f"{days}d {hours}h", urgent)
+        return (f"{days}d {hours}h {minutes}m", urgent)
     if hours > 0:
         return (f"{hours}h {minutes}m", urgent)
     return (f"{minutes}m", urgent)
@@ -96,6 +96,10 @@ def _pct(part: int, total: int) -> float:
     if total <= 0:
         return 0.0
     return (part / total) * 100.0
+
+def _set_expanded(market_id: str, value: bool = True):
+    st.session_state[f"mkt_exp_{market_id}"] = value
+
 
 def _toast_html(msg: str, kind: str = "success") -> str:
     bg = "rgba(34,197,94,0.22)" if kind == "success" else "rgba(239,68,68,0.18)"
@@ -231,7 +235,17 @@ def render_betting():
 
                 st.markdown(_market_header_html(title, m.get("status") or "", close_time), unsafe_allow_html=True)
                 st.caption(f"ID: `{m.get('market_id','')}`")
-                with st.expander("Ver detalhes", expanded=False):
+                with st.expander("Ver detalhes", expanded=bool(st.session_state.get(f"mkt_exp_{m['market_id']}", False))):
+                    cexp1, cexp2 = st.columns([1, 1])
+                    with cexp1:
+                        if st.button("📌 Manter aberto", key=f"pin_{m['market_id']}"):
+                            _set_expanded(m['market_id'], True)
+                            st.rerun()
+                    with cexp2:
+                        if st.button("✖ Fechar", key=f"close_{m['market_id']}"):
+                            _set_expanded(m['market_id'], False)
+                            st.rerun()
+
                         st.write(m.get("description", ""))
 
                         options = m.get("options") or []
@@ -252,8 +266,8 @@ def render_betting():
                                 st.write(f"{amt_opt:,}".replace(",", " "))
 
                         if (m.get("status") == "open") and options:
-                            opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}")
-                            amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}")
+                            opt_sel = st.selectbox("Escolhe opção", options, key=f"opt_{m['market_id']}", on_change=_set_expanded, args=(m['market_id'], True))
+                            amt = st.number_input("Valor", min_value=1, step=10, value=100, key=f"amt_{m['market_id']}", on_change=_set_expanded, args=(m['market_id'], True))
                             toast_spot = st.empty()
                             if st.button("Apostar", key=f"bet_{m['market_id']}", type="primary"):
                                 ok, msg = place_bet(m["market_id"], u["user_id"], opt_sel, int(amt))
