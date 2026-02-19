@@ -28,6 +28,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+render_global_ui(icon_path="icon.png", logo_path="armadura.png")
+is_mobile = init_mobile_detection()
+
 # --- TESTE FIRESTORE (temporário) ---
 import streamlit as st
 from modules.betting_firestore import fs_client
@@ -39,11 +42,6 @@ except Exception as e:
     st.error(f"Firestore FAIL: {e}")
     st.exception(e)
 # -------------------------------------
-
-
-render_global_ui(icon_path="icon.png", logo_path="armadura.png")
-is_mobile = init_mobile_detection()
-
 
 # -------------------------------------------------
 # CONSTANTS
@@ -418,7 +416,7 @@ def build_local_dash_org(row):
 # NAVEGAÇÃO PRINCIPAL (compatível e estável)
 # -------------------------------------------------
 # Compatibilidade com restos antigos (ex.: tournaments_tab setava main_tab=1)
-_tab_map = {0: "📅 Calendário", 1: "🎾 Torneios", 2: "🧮 Pontos", 3: "🏆 Rankings"}
+_tab_map = {0: "📅 Calendário", 1: "🎾 Torneios", 2: "🧮 Pontos", 3: "🏆 Rankings", 4: "💰 Apostas"}
 if "main_view" not in st.session_state:
     if "main_tab" in st.session_state and st.session_state.main_tab in _tab_map:
         st.session_state.main_view = _tab_map.get(st.session_state.main_tab, "📅 Calendário")
@@ -428,7 +426,7 @@ if "main_view" not in st.session_state:
 # Radio horizontal é o mais compatível com todas as versões de Streamlit
 main_view = st.radio(
     "",
-    ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings"],
+    ["📅 Calendário", "🎾 Torneios", "🧮 Pontos", "🏆 Rankings", "💰 Apostas"],
     key="main_view",
     horizontal=True,
     label_visibility="collapsed",
@@ -455,3 +453,15 @@ elif main_view == "🧮 Pontos":
 
 elif main_view == "🏆 Rankings":
     render_rankings()
+
+elif main_view == "💰 Apostas":
+    # Lazy import para não rebentar o app enquanto ainda estás a criar os módulos
+    try:
+        from modules.betting_tab import render_betting
+        render_betting()
+    except ModuleNotFoundError:
+        st.error("Módulos das apostas ainda não existem no repo.")
+        st.info("Cria estes ficheiros em /modules/: betting_firestore.py, betting_auth.py, betting_tab.py")
+    except Exception as e:
+        st.error("Erro ao abrir a tab Apostas.")
+        st.exception(e)
