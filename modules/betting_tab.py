@@ -283,7 +283,8 @@ def render_betting():
                                     st.session_state["bet_flash"] = {"kind": "error", "msg": "❌ " + str(msg)}
 
                                 # pequeno delay para deixar o browser iniciar o áudio/mostrar toast
-                                time.sleep(0.6)
+                                st.session_state[f"mkt_exp_{m['market_id']}"] = False
+                            time.sleep(0.6)
                                 st.rerun()
                         else:
                             ro = m.get("resolved_option")
