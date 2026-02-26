@@ -1,9 +1,6 @@
 import io
 import streamlit as st
 
-from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
-
-
 
 from datetime import datetime, date
 
@@ -16,10 +13,11 @@ def _falsey(v) -> bool:
     return s in ("false", "0", "no", "n", "nao", "não", "off")
 
 def _parse_date(v):
-    \"\"\"Parse dates coming from Google Sheets.
-    Accepts: YYYY-MM-DD, YYYY/MM/DD, DD/MM/YYYY, DD-MM-YYYY, or datetime-like.
+    """
+    Parse dates coming from Google Sheets.
+    Accepts: YYYY-MM-DD, YYYY/MM/DD, DD/MM/YYYY, DD-MM-YYYY (and some datetime strings).
     Returns: date or None.
-    \"\"\"
+    """
     if v is None:
         return None
     if isinstance(v, date) and not isinstance(v, datetime):
@@ -30,21 +28,18 @@ def _parse_date(v):
     if not s:
         return None
 
-    # Try ISO first
     for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
         try:
             return datetime.strptime(s, fmt).date()
         except Exception:
             pass
 
-    # Try PT common formats
     for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y"):
         try:
             return datetime.strptime(s, fmt).date()
         except Exception:
             pass
 
-    # Last resort: try dateutil if available
     try:
         from dateutil import parser  # type: ignore
         return parser.parse(s, dayfirst=True).date()
@@ -52,49 +47,50 @@ def _parse_date(v):
         return None
 
 def _inscricoes_estado(t: dict):
-    \"\"\"Decide if 'Inscrever' should be enabled for a tournament dict.
+    """
+    Decide if "Inscrever" should be enabled for a tournament dict.
     Sheet columns supported (any of these):
-      - inscricoes_abertas (TRUE/FALSE) [manual override]
+      - inscricoes_abertas (TRUE/FALSE)   [manual override]
       - inscricoes_inicio  (date)
       - inscricoes_fim     (date)
-    Also accepts aliases:
-      - abertas/aberta, inicio_inscricoes, fim_inscricoes
+
+    Aliases accepted:
+      - abertas/aberta
+      - inicio_inscricoes / fim_inscricoes
+
     Priority:
-      1) manual override inscricoes_abertas if provided (TRUE/FALSE)
-      2) date window check if inicio/fim provided
+      1) manual override if provided
+      2) date window if provided
       3) default open
-    Returns (enabled: bool, reason: str|None)
-    \"\"\"
-    # 1) Manual override
-    manual = (
-        t.get("inscricoes_abertas")
-        if t.get("inscricoes_abertas") is not None and str(t.get("inscricoes_abertas")).strip() != ""
-        else t.get("abertas") if t.get("abertas") is not None and str(t.get("abertas")).strip() != "" else
-        t.get("aberta")
-    )
+    Returns: (enabled: bool, reason: str|None)
+    """
+    manual = None
+    for k in ("inscricoes_abertas", "abertas", "aberta"):
+        if k in t and str(t.get(k)).strip() != "":
+            manual = t.get(k)
+            break
+
     if manual is not None and str(manual).strip() != "":
         if _truthy(manual):
             return True, None
         if _falsey(manual):
             return False, "Inscrições fechadas"
-        # if weird value, ignore and continue
 
-    # 2) Date window
-    inicio = _parse_date(t.get("inscricoes_inicio") or t.get("inicio_inscricoes") or t.get("inicio"))
-    fim = _parse_date(t.get("inscricoes_fim") or t.get("fim_inscricoes") or t.get("fim"))
+    inicio = _parse_date(t.get("inscricoes_inicio") or t.get("inicio_inscricoes"))
+    fim = _parse_date(t.get("inscricoes_fim") or t.get("fim_inscricoes"))
 
     today = date.today()
-
     if inicio and today < inicio:
         return False, f"Abre em {inicio.strftime('%d/%m/%Y')}"
     if fim and today > fim:
         return False, "Inscrições fechadas"
-    # If within window (or only one bound satisfied), open
     if inicio or fim:
         return True, None
 
-    # 3) Default
     return True, None
+
+from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
+
 
 class _BytesUpload:
     """Fallback object that mimics Streamlit's UploadedFile enough for our storage layer."""
@@ -202,26 +198,16 @@ def render_tournaments(is_mobile: bool):
                 if t.get("descricao"):
                     st.write(t["descricao"])
 
-                # Controlar se o torneio está ativo (permite desativar botão via coluna "ativo")
-                ativo_raw = str(t.get("ativo", "TRUE")).strip().lower()
-                ativo = ativo_raw in ("true", "1", "yes", "sim")
 
-                
-        enabled, reason = _inscricoes_estado(t)
+                enabled, reason = _inscricoes_estado(t)
 
-        st.button(
-            "Inscrever" if enabled else (reason or "Inscrições fechadas"),
-            key=f"insc_{t.get('id')}",
-            type="primary",
-            on_click=ir_para_inscricao if enabled else None,
-            args=(t.get("id"),) if enabled else None,
-            disabled=not enabled,
-        )
-}",
+                st.button(
+                    "Inscrever" if enabled else (reason or "Inscrições fechadas"),
+                    key=f"insc_{t.get('id')}",
                     type="primary",
-                    on_click=ir_para_inscricao,
-                    args=(t.get("id"),),
-                    disabled=not ativo,
+                    on_click=ir_para_inscricao if enabled else None,
+                    args=(t.get("id"),) if enabled else None,
+                    disabled=not enabled,
                 )
         st.divider()
 
