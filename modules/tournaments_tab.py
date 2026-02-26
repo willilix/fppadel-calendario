@@ -3,6 +3,8 @@ import streamlit as st
 
 from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
 
+# 🔒 Controlo global das inscrições
+INSCRICOES_ABERTAS = True
 
 class _BytesUpload:
     """Fallback object that mimics Streamlit's UploadedFile enough for our storage layer."""
@@ -115,12 +117,12 @@ def render_tournaments(is_mobile: bool):
                 ativo = ativo_raw in ("true", "1", "yes", "sim")
 
                 st.button(
-                    "Inscrever" if ativo else "Inscrições fechadas",
+                    "Inscrever" if INSCRICOES_ABERTAS else "Inscrições fechadas",
                     key=f"insc_{t.get('id')}",
                     type="primary",
-                    on_click=ir_para_inscricao,
-                    args=(t.get("id"),),
-                    disabled=not ativo,
+                    on_click=ir_para_inscricao if INSCRICOES_ABERTAS else None,
+                    args=(t.get("id"),) if INSCRICOES_ABERTAS else None,
+                    disabled=not INSCRICOES_ABERTAS,
                 )
         st.divider()
 
