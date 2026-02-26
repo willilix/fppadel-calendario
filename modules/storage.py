@@ -81,14 +81,25 @@ def read_torneios():
 
     torneios = []
     for row in rows:
+        # ⚠️ Google Sheets pode devolver linhas "curtas" (sem células vazias no fim).
+        # Para garantir que colunas novas (ex: inscricoes_abertas) chegam aqui,
+        # fazemos padding até ao tamanho dos headers.
+        if len(row) < len(headers):
+            row = row + [""] * (len(headers) - len(row))
+
         data = dict(zip(headers, row))
 
-        if str(data.get("ativo","")).upper() != "TRUE":
+        ativo_raw = str(data.get("ativo", "")).strip().upper()
+        ativo = (ativo_raw == "TRUE")
+
+        # Se preferires esconder torneios inativos, deixa esta linha ativa.
+        # Se quiseres mostrar mas com inscrições fechadas, comenta o "continue".
+        if not ativo:
             continue
 
         try:
             vagas = int(data.get("vagas") or 0)
-        except:
+        except Exception:
             vagas = 0
 
         torneios.append({
@@ -96,9 +107,15 @@ def read_torneios():
             "nome": data.get("nome"),
             "data": data.get("data"),
             "local": data.get("local"),
-            "descricao": data.get("descricao",""),
+            "descricao": data.get("descricao", ""),
             "img": data.get("imagem_url"),
             "vagas": vagas,
+
+            # ✅ Pass-through para controlo de inscrições via sheet:
+            "ativo": data.get("ativo", ""),
+            "inscricoes_abertas": data.get("inscricoes_abertas", ""),
+            "inscricoes_inicio": data.get("inscricoes_inicio", ""),
+            "inscricoes_fim": data.get("inscricoes_fim", ""),
         })
 
     return torneios
