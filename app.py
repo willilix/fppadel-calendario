@@ -386,6 +386,12 @@ def normalize_and_dedupe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_local_dash_org(row):
+    """Constrói o campo 'Local' mostrado na tab Calendário.
+
+    Preferência:
+      1) Local_pdf / Organizacao_pdf (colunas do PDF)
+      2) Fallback: inferir local a partir do texto de 'Actividade' (ex.: 'FIP Bronze Portimão ...')
+    """
     loc = row.get("Local_pdf")
     org = row.get("Organizacao_pdf")
 
@@ -398,7 +404,34 @@ def build_local_dash_org(row):
         return loc
     if org:
         return org
+
+    # --- Fallback (PDF mudou e as colunas Local/Organização vieram vazias) ---
+    act = row.get("Actividade")
+    act = "" if pd.isna(act) else str(act).strip()
+
+    # Padrões típicos no calendário FPPadel:
+    #   "FIP Bronze Portimão FPP ..."
+    #   "FIP Silver Lisboa FPP ..."
+    #   "FIP Silver Porto FPP ..."
+    m = re.search(
+        r"\bFIP\s+(?:Bronze|Silver|Gold|Platinum)\s+([^\d]+?)(?:\s+FPP\b|\s*$)",
+        act,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        cand = m.group(1).strip(" -–—|")
+        cand = re.sub(r"\s+", " ", cand).strip()
+        if cand:
+            return cand
+
+    # Outros casos: a cidade pode estar no fim antes de 'FPP'
+    if re.search(r"\bFPP\b\s*$", act, flags=re.IGNORECASE):
+        m3 = re.search(r"([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\-]+)\s+FPP\b", act)
+        if m3:
+            return m3.group(1).strip()
+
     return ""
+
 
 
 # -------------------------------------------------
