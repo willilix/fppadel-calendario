@@ -1,11 +1,88 @@
 from __future__ import annotations
 
 import os
+import re
 import datetime as dt
 from urllib.parse import urlparse, quote_plus
 
 import pandas as pd
 import streamlit as st
+
+
+
+def _clean_text(x) -> str:
+    s = "" if x is None else str(x)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def _pick_first(row, cols):
+    for c in cols:
+        if c in row and pd.notna(row[c]):
+            v = _clean_text(row[c])
+            if v:
+                return v
+    return ""
+
+def _infer_local(row, build_local_dash_org):
+    """Tenta construir 'Local' de forma robusta.
+    1) Usa a função original build_local_dash_org(row)
+    2) Fallback: tenta colunas comuns que podem ter mudado no PDF
+    3) Fallback final: procura em todas as colunas string por algo que pareça local
+    """
+    try:
+        v = build_local_dash_org(row)
+        v = _clean_text(v)
+        if v:
+            return v
+    except Exception:
+        pass
+
+    # Colunas mais comuns (variam conforme o PDF)
+    preferred = [
+        "Local", "Localidade", "LOCAL", "Local (Org)",
+        "Clube", "Clube / Organização", "Clube/Organização", "Organização", "Organizacao", "Org", "ORGANIZAÇÃO",
+        "Cidade", "Concelho", "Distrito",
+        "Pavilhão", "Pavilhao", "Complexo", "Campo",
+    ]
+    v = _pick_first(row, preferred)
+    if v:
+        return v
+
+    # Algumas vezes o local vem dentro de 'Categorias' ou 'Classe' (ex: "... — Lisboa")
+    for c in ("Categorias", "Classe"):
+        if c in row and pd.notna(row[c]):
+            txt = _clean_text(row[c])
+            # captura um sufixo depois de " - " / " — " / " | "
+            m = re.search(r"(?:\s[-—|]\s)([^-—|]{3,60})$", txt)
+            if m:
+                cand = _clean_text(m.group(1))
+                if cand:
+                    return cand
+
+    # Fallback final: varrer todos os campos por um candidato plausível
+    # (evita datas e siglas curtas)
+    best = ""
+    for c, val in row.items():
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            continue
+        s = _clean_text(val)
+        if not s:
+            continue
+        if len(s) < 4:
+            continue
+        if re.fullmatch(r"\d{1,2}[/-]\d{1,2}(?:\s*a\s*\d{1,2}[/-]\d{1,2})?", s):
+            continue
+        # preferir strings com letras e eventualmente parêntesis (clubes)
+        score = 0
+        if re.search(r"[A-Za-zÀ-ÿ]", s): score += 2
+        if re.search(r"\b(Lisboa|Porto|Braga|Setúbal|Faro|Madeira|Açores|Coimbra|Aveiro|Leiria)\b", s, re.I): score += 3
+        if re.search(r"\b(CP|Clube|Padel|Padel Club|CT|Associação|Associacao)\b", s, re.I): score += 2
+        if len(s) <= 80: score += 1
+        if score > 0 and score >= (0 if not best else -1):
+            # escolhe o de melhor score e mais curto
+            if (not best) or (score > 4 and len(s) < len(best)) or (score > 4 and best and score > 5):
+                best = s
+    return best
 
 
 def _repair_cross_month_from_text(df: pd.DataFrame, year: int) -> pd.DataFrame:
@@ -123,7 +200,7 @@ def render_calendar(
         st.error("Não consegui extrair linhas do PDF (o formato pode ter mudado).")
         st.stop()
 
-    df["Local"] = df.apply(build_local_dash_org, axis=1)
+    df["Local"] = df.apply(lambda r: _infer_local(r, build_local_dash_org), axis=1)
     df["Local"] = (
         df["Local"].astype("string")
         .fillna("")
