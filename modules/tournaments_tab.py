@@ -1,6 +1,7 @@
 import io
 import streamlit as st
 
+from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
 
 from datetime import datetime, date
 
@@ -13,10 +14,8 @@ def _falsey(v) -> bool:
     return s in ("false", "0", "no", "n", "nao", "não", "off")
 
 def _parse_date(v):
-    """
-    Parse dates coming from Google Sheets.
-    Accepts: YYYY-MM-DD, YYYY/MM/DD, DD/MM/YYYY, DD-MM-YYYY (and some datetime strings).
-    Returns: date or None.
+    """Parse datas vindas do Google Sheets.
+    Aceita: YYYY-MM-DD, YYYY/MM/DD, DD/MM/YYYY, DD-MM-YYYY (e variantes com hora).
     """
     if v is None:
         return None
@@ -47,39 +46,28 @@ def _parse_date(v):
         return None
 
 def _inscricoes_estado(t: dict):
+    """Decide se o botão 'Inscrever' deve estar ativo para um torneio.
+    Colunas suportadas no Sheet (por torneio):
+      - inscricoes_abertas (TRUE/FALSE) [override manual]
+      - inscricoes_inicio (data)
+      - inscricoes_fim    (data)
+    Regras:
+      1) Se 'inscricoes_abertas' estiver preenchido, manda.
+      2) Senão, se existir inicio/fim, aplica janela.
+      3) Senão, por defeito está aberto.
     """
-    Decide if "Inscrever" should be enabled for a tournament dict.
-    Sheet columns supported (any of these):
-      - inscricoes_abertas (TRUE/FALSE)   [manual override]
-      - inscricoes_inicio  (date)
-      - inscricoes_fim     (date)
-
-    Aliases accepted:
-      - abertas/aberta
-      - inicio_inscricoes / fim_inscricoes
-
-    Priority:
-      1) manual override if provided
-      2) date window if provided
-      3) default open
-    Returns: (enabled: bool, reason: str|None)
-    """
-    manual = None
-    for k in ("inscricoes_abertas", "abertas", "aberta"):
-        if k in t and str(t.get(k)).strip() != "":
-            manual = t.get(k)
-            break
-
+    manual = t.get("inscricoes_abertas")
     if manual is not None and str(manual).strip() != "":
         if _truthy(manual):
             return True, None
         if _falsey(manual):
             return False, "Inscrições fechadas"
 
-    inicio = _parse_date(t.get("inscricoes_inicio") or t.get("inicio_inscricoes"))
-    fim = _parse_date(t.get("inscricoes_fim") or t.get("fim_inscricoes"))
+    inicio = _parse_date(t.get("inscricoes_inicio"))
+    fim = _parse_date(t.get("inscricoes_fim"))
 
     today = date.today()
+
     if inicio and today < inicio:
         return False, f"Abre em {inicio.strftime('%d/%m/%Y')}"
     if fim and today > fim:
@@ -89,7 +77,6 @@ def _inscricoes_estado(t: dict):
 
     return True, None
 
-from modules.storage import read_torneios, read_sheet, save_inscricao, normalize_phone
 
 
 class _BytesUpload:
@@ -183,10 +170,12 @@ def render_tournaments(is_mobile: bool):
             st.session_state.tour_view = "inscricao"
             st.session_state.main_tab = 1  # força Torneios
 
+        
         cols = st.columns(3 if not is_mobile else 1)
         for i, t in enumerate(TORNEIOS):
             with cols[i % len(cols)]:
-                img = (t.get("img") or "").strip()
+                # imagem do torneio (usa imagem_url, mas aceita 'img' legado)
+                img = (t.get("imagem_url") or t.get("img") or "").strip()
                 if img:
                     try:
                         st.image(img, use_container_width=True)
@@ -198,8 +187,25 @@ def render_tournaments(is_mobile: bool):
                 if t.get("descricao"):
                     st.write(t["descricao"])
 
+                # --- estado do botão Inscrever (por torneio, via Google Sheet) ---
+                # Hard stops: ativo == FALSE ou vagas == 0
+                ativo_raw = str(t.get("ativo", "TRUE")).strip().lower()
+                ativo = ativo_raw in ("true", "1", "yes", "sim")
+
+                vagas = t.get("vagas", None)
+                try:
+                    vagas_int = int(vagas) if vagas is not None and str(vagas).strip() != "" else None
+                except Exception:
+                    vagas_int = None
 
                 enabled, reason = _inscricoes_estado(t)
+
+                if not ativo:
+                    enabled = False
+                    reason = "Inativo"
+                elif vagas_int == 0:
+                    enabled = False
+                    reason = "Sem vagas"
 
                 st.button(
                     "Inscrever" if enabled else (reason or "Inscrições fechadas"),
@@ -209,12 +215,7 @@ def render_tournaments(is_mobile: bool):
                     args=(t.get("id"),) if enabled else None,
                     disabled=not enabled,
                 )
-        st.divider()
-
-    # ------------------------
-    # FORMULÁRIO DE INSCRIÇÃO
-    # ------------------------
-    if st.session_state.tour_view == "inscricao":
+if st.session_state.tour_view == "inscricao":
         torneio = get_torneio(st.session_state.torneio_sel)
         if not torneio:
             st.warning("Sem torneio selecionado.")
