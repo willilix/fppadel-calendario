@@ -15,6 +15,18 @@ def _clean_text(x) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
+
+MONTHS_PT = {
+    "janeiro","fevereiro","março","marco","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"
+}
+
+def _is_month_only(s: str) -> bool:
+    if not s:
+        return False
+    t = s.strip().lower()
+    return t in MONTHS_PT
+
+
 def _pick_first(row, cols):
     for c in cols:
         if c in row and pd.notna(row[c]):
@@ -32,7 +44,7 @@ def _infer_local(row, build_local_dash_org):
     try:
         v = build_local_dash_org(row)
         v = _clean_text(v)
-        if v:
+        if v and not _is_month_only(v):
             return v
     except Exception:
         pass
@@ -45,7 +57,7 @@ def _infer_local(row, build_local_dash_org):
         "Pavilhão", "Pavilhao", "Complexo", "Campo",
     ]
     v = _pick_first(row, preferred)
-    if v:
+    if v and not _is_month_only(v):
         return v
 
     # Algumas vezes o local vem dentro de 'Categorias' ou 'Classe' (ex: "... — Lisboa")
@@ -63,10 +75,15 @@ def _infer_local(row, build_local_dash_org):
     # (evita datas e siglas curtas)
     best = ""
     for c, val in row.items():
+        # Evitar confundir mês (da coluna Data/Local) com um local real
+        if str(c).strip().lower() in ("data (mês + dia)", "data", "mes", "mês"):
+            continue
         if val is None or (isinstance(val, float) and pd.isna(val)):
             continue
         s = _clean_text(val)
         if not s:
+            continue
+        if _is_month_only(s):
             continue
         if len(s) < 4:
             continue
