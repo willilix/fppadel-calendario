@@ -27,6 +27,34 @@ def _is_month_only(s: str) -> bool:
     return t in MONTHS_PT
 
 
+
+def _extract_local_from_text(txt: str) -> str:
+    s = _clean_text(txt)
+    if not s:
+        return ""
+    # Padrão típico: "FIP Bronze Portimão FPP ..." / "FIP Silver Lisboa FPP ..."
+    m = re.search(r"\bFIP\s+(?:Bronze|Silver|Gold|Platinum)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\- ]{2,60})\b", s, re.I)
+    if m:
+        cand = _clean_text(m.group(1))
+        # corta se vier com "FPP" ou classes coladas
+        cand = re.split(r"\bFPP\b|\bF\d\b|\bM\d\b|\bFIP\b", cand, flags=re.I)[0]
+        cand = _clean_text(cand)
+        cand = re.sub(r"^(Bronze|Silver|Gold|Platinum)\s+", "", cand, flags=re.I).strip()
+        if cand and not _is_month_only(cand):
+            return cand
+
+    # Se houver uma cidade conhecida dentro do texto, usa-a
+    cities = [
+        "Portimão","Portimao","Lisboa","Porto","Braga","Setúbal","Setubal","Faro","Coimbra","Aveiro","Leiria",
+        "Viseu","Évora","Evora","Guimarães","Guimaraes","Cascais","Sintra","Albufeira","Loulé","Loule",
+        "Olhão","Olhao","Tavira","Lagos","Ericeira","Matosinhos"
+    ]
+    for c in cities:
+        if re.search(rf"\b{re.escape(c)}\b", s, re.I):
+            return c
+    return ""
+
+
 def _pick_first(row, cols):
     for c in cols:
         if c in row and pd.notna(row[c]):
@@ -60,6 +88,13 @@ def _infer_local(row, build_local_dash_org):
     if v and not _is_month_only(v):
         return v
 
+    # Tentar extrair local a partir de texto (ex: "FIP Bronze Portimão FPP ...")
+    for c in ("Categorias", "Categoria", "Actividade", "Atividade", "Evento", "Prova", "Classe"):
+        if c in row and pd.notna(row[c]):
+            cand = _extract_local_from_text(row[c])
+            if cand:
+                return cand
+
     # Algumas vezes o local vem dentro de 'Categorias' ou 'Classe' (ex: "... — Lisboa")
     for c in ("Categorias", "Classe"):
         if c in row and pd.notna(row[c]):
@@ -86,6 +121,8 @@ def _infer_local(row, build_local_dash_org):
         if _is_month_only(s):
             continue
         if len(s) < 4:
+            continue
+        if re.fullmatch(r"\d{1,2}\s*a\s*\d{1,2}$", s):
             continue
         if re.fullmatch(r"\d{1,2}[/-]\d{1,2}(?:\s*a\s*\d{1,2}[/-]\d{1,2})?", s):
             continue
