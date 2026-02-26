@@ -110,12 +110,20 @@ def render_tournaments(is_mobile: bool):
                 if t.get("descricao"):
                     st.write(t["descricao"])
 
-                st.button(
-                    "Inscrever",
-                    key=f"insc_{t.get('id')}",
-                    type="primary",
-                    on_click=ir_para_inscricao,
-                    args=(t.get("id"),),
+                
+        # Controlar se o torneio está ativo (permite desativar botão via coluna "ativo")
+        ativo_raw = str(t.get("ativo", "TRUE")).strip().lower()
+        ativo = ativo_raw in ("true", "1", "yes", "sim")
+
+        st.button(
+            "Inscrever" if ativo else "Inscrições fechadas",
+            key=f"insc_{t.get('id')}",
+            type="primary",
+            on_click=ir_para_inscricao,
+            args=(t.get("id"),),
+            disabled=not ativo,
+        )
+,),
                 )
 
         st.divider()
